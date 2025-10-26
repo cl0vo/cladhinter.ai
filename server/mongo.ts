@@ -20,7 +20,7 @@ const globalCache: GlobalMongoCache = globalThis.__mongoCache ?? {
 
 globalThis.__mongoCache = globalCache;
 
-function requireEnv(name: 'MONGODB_URI' | 'MONGODB_DB'): string {
+function requireEnv(name: 'MONGOBASE_MONGODB_URI'): string {
   const value = process.env[name];
 
   if (!value) {
@@ -31,7 +31,7 @@ function requireEnv(name: 'MONGODB_URI' | 'MONGODB_DB'): string {
 }
 
 async function createMongoClient(): Promise<MongoClient> {
-  const uri = requireEnv('MONGODB_URI');
+  const uri = requireEnv('MONGOBASE_MONGODB_URI');
 
   const client = new MongoClient(uri, {
     maxPoolSize: 10,
@@ -55,10 +55,9 @@ export async function getMongoClient(): Promise<MongoClient> {
 }
 
 export async function getMongoDb(): Promise<Db> {
-  const dbName = requireEnv('MONGODB_DB');
   const client = await getMongoClient();
 
-  return client.db(dbName);
+  return client.db();
 }
 
 export async function connectToDatabase(): Promise<typeof mongoose> {
@@ -67,11 +66,9 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   }
 
   if (!globalCache.mongoosePromise) {
-    const uri = requireEnv('MONGODB_URI');
-    const dbName = requireEnv('MONGODB_DB');
+    const uri = requireEnv('MONGOBASE_MONGODB_URI');
 
     globalCache.mongoosePromise = mongoose.connect(uri, {
-      dbName,
       maxPoolSize: 10,
     });
   }

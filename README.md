@@ -200,7 +200,7 @@ The app runs on [http://localhost:5173](http://localhost:5173) by default.
 
 ## 🛠️ Local Development
 
-1. **Copy environment file**: `cp .env.example .env` and update the placeholders with your Atlas connection string, database name, and TON configuration.
+1. **Copy environment file**: `cp .env.example .env` and update the placeholders with your MongoDB connection string and TON configuration.
 2. **Install dependencies**: `npm install`.
 3. **Provision database indexes**: `npm run db:indexes` creates the required indexes for the `users`, `ledger`, and `sessions` collections (see below).
 4. **Start the dev server**: `npm run dev`.
@@ -212,8 +212,7 @@ The dev middleware automatically connects to MongoDB through `server/mongo.ts`, 
 ## 🌍 Environment Variables
 | Variable | Description |
 | --- | --- |
-| `MONGODB_URI` | Connection string for MongoDB Atlas (used by MongoDB client/Mongoose). |
-| `MONGODB_DB` | Database name used for the Cladhunter collections. |
+| `MONGOBASE_MONGODB_URI` | Connection string provisioned by the Vercel MongoDB integration (or your local MongoDB URI). |
 | `TON_API_KEY` | Optional key for TON payment gateway integrations. |
 | `NEXT_PUBLIC_TON_APP_NAME` | Public identifier shown in TON Connect. |
 | `VERCEL_ENV` | Optional deployment stage flag for logging. |
@@ -230,7 +229,7 @@ Deploy to any static hosting:
 - **GitHub Pages**: Push to gh-pages branch
 
 ### Backend
-MongoDB is accessed directly via the built-in Vite middleware. Ensure both `MONGODB_URI` and `MONGODB_DB` are configured before running the dev server.
+MongoDB is accessed directly via the built-in Vite middleware. Ensure `MONGOBASE_MONGODB_URI` is configured before running the dev server.
 
 ### Database Index Script
 
@@ -264,7 +263,7 @@ Client integrations should store the returned `userId` and `accessToken` (if iss
 ## 🚀 Deployment (Vercel)
 1. Push your branch to GitHub.
 2. Ensure the Vercel project is connected to the GitHub repository.
-3. In the Vercel dashboard, configure the environment variables from `.env.example` (`MONGODB_URI`, `MONGODB_DB`, `TON_API_KEY`, `NEXT_PUBLIC_TON_APP_NAME`, `VERCEL_ENV`, `VITE_TON_MANIFEST`).
+3. In the Vercel dashboard, configure the environment variables from `.env.example` (`MONGOBASE_MONGODB_URI`, `TON_API_KEY`, `NEXT_PUBLIC_TON_APP_NAME`, `VERCEL_ENV`, `VITE_TON_MANIFEST`).
 4. Deploy the project (Vercel automatically builds each push).
 5. After the first deployment, run `npm run db:indexes` locally or from a CI job against the production database to provision the MongoDB indexes.
 6. Verify the preview build, then promote to production when ready.
