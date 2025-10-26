@@ -217,7 +217,7 @@ The dev middleware automatically connects to MongoDB through `server/mongo.ts`, 
 | `NEXT_PUBLIC_TON_APP_NAME` | Public identifier shown in TON Connect. |
 | `VERCEL_ENV` | Optional deployment stage flag for logging. |
 | `VITE_TON_MANIFEST` | Optional override for the TonConnect manifest URL. |
-| `SERVER_HMAC_SECRET` | Secret used to HMAC wallet proof nonces before persisting sessions. |
+| `SERVER_HMAC_SECRET` | Secret used to HMAC wallet proof nonces before persisting sessions (defaults to an insecure dev secret when `NODE_ENV` ≠ `production`). |
 | `TON_PROOF_ALLOWED_DOMAINS` | Comma separated list of allowed TON proof domains (defaults to `localhost:5173,ton-connect.github.io`). |
 | `TON_MAINNET_RPC` | Optional override for the TON mainnet RPC endpoint used to validate proofs. |
 | `WALLET_PROOF_TTL_SECONDS` | Lifetime (in seconds) for wallet proof sessions and timestamps (defaults to 900). |

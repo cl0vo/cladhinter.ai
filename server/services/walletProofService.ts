@@ -31,6 +31,7 @@ const TON_CONNECT_PREFIX = 'ton-connect';
 
 const DEFAULT_ALLOWED_DOMAINS = ['localhost:5173', 'ton-connect.github.io'];
 const DEFAULT_TON_ENDPOINT = 'https://mainnet-v4.tonhubapi.com';
+const DEV_FALLBACK_HMAC_SECRET = 'insecure-dev-wallet-proof-secret';
 
 interface TonProofDomain {
   lengthBytes: number;
@@ -95,12 +96,22 @@ function getTonClient(): TonClient4 {
   return tonClient;
 }
 
+function isProduction(): boolean {
+  return (process.env.NODE_ENV ?? '').toLowerCase() === 'production';
+}
+
 function getHmacSecret(): string {
   const secret = process.env.SERVER_HMAC_SECRET;
-  if (!secret) {
-    throw new Error('SERVER_HMAC_SECRET is not configured');
+  if (secret) {
+    return secret;
   }
-  return secret;
+
+  if (!isProduction()) {
+    console.warn('[wallet-proof] Falling back to insecure dev HMAC secret. Configure SERVER_HMAC_SECRET for production.');
+    return DEV_FALLBACK_HMAC_SECRET;
+  }
+
+  throw new Error('SERVER_HMAC_SECRET is not configured');
 }
 
 function getTtlSeconds(): number {
