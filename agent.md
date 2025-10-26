@@ -1,43 +1,69 @@
-# Cladhunter – Developer Notes (MongoDB Edition)
+# Cladhunter AI Operating Protocol (AIOP)
 
-## 🌐 Architecture Overview
-- **Frontend:** React 18 + TypeScript, Tailwind, Motion, Recharts.
-- **API Layer:** Vite dev middleware (`server/routes.ts`) exposing REST endpoints under `/api/*`.
-- **Database:** MongoDB accessed via Mongoose models in `server/models/*` with business logic in `server/services/userService.ts`.
-- **Testing Helpers:** `utils/test-api.ts` attaches `window.testApi` for manual API calls in development.
+## Mission Context
+- **Objective**: Deliver a mobile-first watch-to-earn simulator where users mine the 🆑 currency by watching ads, managing boosts, and interacting with TON payments.
+- **Success Criteria**: Maintain a polished user experience, guarantee data consistency, and ensure the AI agent can deploy stable builds to production.
 
+## System Overview
 ```
-React Components / Hooks
-        ↓ (fetch)
-`/api/*` routes (server/routes.ts)
-        ↓
-Mongoose services (server/services/userService.ts)
-        ↓
-MongoDB (MONGODB_URI env)
+Frontend  : React 18 + TypeScript + Tailwind + Vite
+Backend   : Node/Express API layer (serverless on Vercel)
+Database  : MongoDB Atlas via Mongoose (URI provided through MONGODB_URI)
+Hosting   : Vercel (frontend + serverless functions)
 ```
+- **External Integrations**: TON Connect (wallet/boosts), ad providers (mocked), GitHub Actions for CI (optional).
 
-## 📁 Key Directories
-- `components/` – UI. `TodoList.tsx` now demonstrates user creation/listing via Mongo.
-- `hooks/` – `useApi.tsx` wraps REST helpers from `utils/api/sqlClient.ts`.
-- `server/` – Node-only code (models, services, middleware).
-- `utils/db.ts` – Mongoose connection with global cache. Requires `MONGODB_URI`.
-- `utils/api/sqlClient.ts` – Fetch helpers used by React hooks/components.
+## Data Layer Contract
+- **Primary store**: MongoDB connected with Mongoose models inside `/src/server/db`.
+- **Connection string**: `process.env.MONGODB_URI` (must be defined in all runtimes).
+- **Collections**: `users`, `sessions`, `adLogs`, `boosts`, `rewards`. Schema files are authoritative; migrations are handled through Mongoose models.
+- **No Supabase or Prisma usage**: remove legacy code when encountered.
 
-## ⚠️ Development Guidelines
-- Ensure `MONGODB_URI` is set (e.g. Atlas string) before running `npm run dev`. Vite connects on startup via `vite.config.ts`.
-- Server code runs in Node context only. Do **not** import `server/*` files into client bundles.
-- API endpoints expect JSON bodies; handle errors by checking `{ error }` fields returned from middleware.
-- Keep shared config (`config/economy.ts`, `config/partners.ts`) in sync with server logic.
-- `window.testApi` is included by default for dev. Strip it from production builds if necessary.
+## Code Authoring Rules
+1. **Do modify** React components (`/components`, `/src`), serverless handlers (`/src/server`), hooks, utilities, and styles when necessary.
+2. **Do not modify** `/guidelines`, `/Attributions.md`, or license metadata without product owner approval.
+3. **Preserve** TypeScript strictness, lint configuration, and Tailwind class structure.
+4. **Database access** must use existing Mongoose helpers; avoid ad-hoc Mongo queries.
+5. **Secrets**: read from environment variables only—never hardcode keys.
+6. **Testing**: add/update Vitest tests alongside code changes where possible.
 
-## ✅ Sample Operations
-- **Create user:** `await createUser({ userId: 'demo_1' })`
-- **List users:** `await listUsersRequest()`
-- Additional actions: `initUser`, `completeAdWatch`, `createOrder`, `claimReward`, etc. All map to routes defined in `server/routes.ts`.
+## Collaboration & Delivery Flow
+1. **Codex**
+   - Use Codex instructions (this document) before each session.
+   - Plan tasks, update AIOP notes if architecture changes.
+2. **GitHub**
+   - Commit atomic changes with descriptive messages.
+   - Open pull requests summarizing scope, testing, and deployment impact.
+3. **Vercel**
+   - Main deployment target. Each PR should link to a Vercel preview.
+   - Ensure environment variables (`MONGODB_URI`, `NEXT_PUBLIC_*`) are set in Vercel dashboard.
+4. **Supabase**
+   - Legacy provider; no active integration. If encountered, migrate or remove the reference.
 
-## 🛠 Tooling
-- `npm run dev` – Vite dev server + Mongo connection.
-- `npm run build` / `npm run preview` – standard Vite pipeline (API middleware also mounted in preview).
-- `npm run test` – Vitest (update/add tests under `tests/`).
+## Initialization Checklist
+1. Copy `.env.example` to `.env.local` (local dev) and `.env` (CI) when needed.
+2. Provide values for:
+   - `MONGODB_URI`
+   - `TON_API_KEY` (if TON features enabled)
+   - `VERCEL_ENV` (optional, used for logging)
+3. Run `npm install`.
+4. Start dev server with `npm run dev` and confirm MongoDB connection success message.
 
-Happy hacking! 🛠️
+## Deployment Procedure
+1. Merge changes to `main` via GitHub PR.
+2. Confirm Vercel CI builds succeed and preview is healthy.
+3. Promote preview to production in Vercel dashboard.
+4. Monitor logs (`vercel logs`) and MongoDB Atlas dashboard for errors within first hour.
+
+## AI Agent Behavior
+- **Before coding**: review open issues, verify requirements, re-read this AIOP.
+- **While coding**: keep diffs minimal, write comments only when logic is non-obvious, and update documentation if architecture changes.
+- **After coding**: run `npm run lint` and `npm run test` (or explain why skipped), summarize changes, and prepare deployment notes.
+- **On legacy artifacts**: replace Supabase/Prisma references with MongoDB equivalents and log removals in commit messages.
+
+## Incident Response
+- On build failure: reproduce locally, fix, re-run tests, update PR.
+- On database outage: fail gracefully by surfacing maintenance banner; queue user actions locally until reconnection.
+- On security concern: rotate affected credentials, document incident, and notify maintainers.
+
+_Last reviewed: 2025-10-22_
