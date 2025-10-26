@@ -21,6 +21,7 @@ import {
   startWalletProofSession,
   type WalletProofFinishInput,
 } from './services/walletProofService';
+import { HttpError } from './errors';
 
 async function readJsonBody<T = any>(req: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
@@ -188,8 +189,9 @@ export function createApiMiddleware(): Middleware {
 
       sendJson(res, 404, { error: 'Not found' });
     } catch (error) {
+      const status = error instanceof HttpError ? error.status : 400;
       const message = error instanceof Error ? error.message : 'Unexpected server error';
-      sendJson(res, 400, { error: message });
+      sendJson(res, status, { error: message });
     }
   };
 }

@@ -21,6 +21,7 @@ export function useUserData() {
 
     const data = await getUserBalance({
       userId: user.id,
+      accessToken: user.accessToken,
     });
 
     if (data) {
@@ -54,6 +55,7 @@ export function useUserData() {
       const data = await initUser({
         userId: user.id,
         walletAddress: user.address,
+        accessToken: user.accessToken,
       });
 
       if (data && isActive) {
