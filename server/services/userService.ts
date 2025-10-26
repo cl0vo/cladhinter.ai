@@ -8,6 +8,7 @@ import { WatchLogModel } from '../models/WatchLog';
 import { SessionLogModel } from '../models/SessionLog';
 import { OrderModel, type OrderStatus } from '../models/Order';
 import { RewardClaimModel } from '../models/RewardClaim';
+import { LedgerModel } from '../models/Ledger';
 
 function ensureEntityExists<T>(entity: T | null | undefined, identifier: string): asserts entity is T {
   if (!entity) {
@@ -459,6 +460,55 @@ export async function claimReward({
     reward: partner.reward,
     new_balance: user.energy,
     partner_name: partner.name,
+  };
+}
+
+export async function getLedgerHistory({
+  userId,
+  page = 1,
+  limit = 20,
+}: {
+  userId: string;
+  page?: number;
+  limit?: number;
+}) {
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  const requestedPage = Number(page);
+  const requestedLimit = Number(limit);
+  const normalizedPage = Number.isFinite(requestedPage) ? Math.max(1, Math.floor(requestedPage)) : 1;
+  const normalizedLimit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.floor(requestedLimit), 1), 100)
+    : 20;
+  const skip = (normalizedPage - 1) * normalizedLimit;
+
+  const [entries, total] = await Promise.all([
+    LedgerModel.find({ userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(normalizedLimit)
+      .lean(),
+    LedgerModel.countDocuments({ userId }),
+  ]);
+
+  return {
+    entries: entries.map((entry) => ({
+      id: String(entry._id),
+      user_id: entry.userId,
+      wallet: entry.wallet,
+      amount: entry.amount,
+      currency: entry.currency,
+      type: entry.type,
+      metadata: entry.metadata ?? null,
+      created_at: entry.createdAt.toISOString(),
+    })),
+    pagination: {
+      page: normalizedPage,
+      limit: normalizedLimit,
+      total,
+      has_next: skip + entries.length < total,
+    },
   };
 }
 

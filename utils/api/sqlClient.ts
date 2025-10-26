@@ -204,3 +204,34 @@ export async function claimReward(body: ClaimRewardInput): Promise<ClaimRewardRe
   return request('/rewards/claim', { body: JSON.stringify(body) });
 }
 
+export interface LedgerHistoryRequest {
+  userId: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface LedgerHistoryEntry {
+  id: string;
+  user_id: string;
+  wallet: string;
+  amount: number;
+  currency: string;
+  type: 'credit' | 'debit';
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface LedgerHistoryResponse {
+  entries: LedgerHistoryEntry[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    has_next: boolean;
+  };
+}
+
+export async function getLedgerHistory(body: LedgerHistoryRequest): Promise<LedgerHistoryResponse> {
+  return request('/ledger/history', { body: JSON.stringify(body) });
+}
+

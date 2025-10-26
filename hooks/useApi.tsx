@@ -16,6 +16,8 @@ import {
   type StatsInput,
   initUser,
   type InitUserInput,
+  getLedgerHistory,
+  type LedgerHistoryRequest,
 } from '../utils/api/sqlClient';
 
 export function useApi() {
@@ -48,6 +50,7 @@ export function useApi() {
     getUserStats: (input: StatsInput) => execute(() => getUserStats(input)),
     getRewardStatus: (input: RewardStatusInput) => execute(() => getRewardStatus(input)),
     claimReward: (input: ClaimRewardInput) => execute(() => claimReward(input)),
+    getLedgerHistory: (input: LedgerHistoryRequest) => execute(() => getLedgerHistory(input)),
   }), [execute]);
 
   return {
