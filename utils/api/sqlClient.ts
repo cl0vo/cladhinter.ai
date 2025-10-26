@@ -29,6 +29,45 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+export interface WalletProofStartResponse {
+  nonce: string;
+  expiresAt?: string | null;
+}
+
+export async function startWalletProof(): Promise<WalletProofStartResponse> {
+  return request('/wallet/proof/start');
+}
+
+export interface WalletProofFinishRequest {
+  address: string;
+  rawAddress: string;
+  chain: string;
+  publicKey: string;
+  nonce: string;
+  proof: {
+    timestamp: number;
+    domain: {
+      lengthBytes: number;
+      value: string;
+    };
+    payload: string;
+    signature: string;
+  };
+}
+
+export interface WalletProofFinishResponse {
+  success: boolean;
+  address: string;
+  userId?: string;
+  accessToken?: string;
+}
+
+export async function finishWalletProof(
+  body: WalletProofFinishRequest,
+): Promise<WalletProofFinishResponse> {
+  return request('/wallet/proof/finish', { body: JSON.stringify(body) });
+}
+
 export interface InitUserInput {
   userId: string;
   walletAddress?: string | null;

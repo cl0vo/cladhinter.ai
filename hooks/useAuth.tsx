@@ -4,6 +4,7 @@ import { useTonConnect } from './useTonConnect';
 export interface AuthUser {
   id: string;
   address: string;
+  rawAddress: string;
   chain: string;
   publicKey: string;
   accessToken: string;
@@ -15,21 +16,29 @@ function createAuthUserId(address: string) {
 }
 
 export function useAuth() {
-  const { wallet } = useTonConnect();
+  const { wallet, isVerifying } = useTonConnect();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (isVerifying) {
+      setLoading(true);
+      return;
+    }
+
     if (wallet) {
-      const authId = createAuthUserId(wallet.address);
+      const authId = wallet.userId ?? createAuthUserId(wallet.rawAddress || wallet.address);
+      const accessToken = wallet.accessToken ?? '';
 
       setUser((prevUser) => {
         if (
           prevUser &&
           prevUser.id === authId &&
           prevUser.address === wallet.address &&
+          prevUser.rawAddress === wallet.rawAddress &&
           prevUser.chain === wallet.chain &&
-          prevUser.publicKey === wallet.publicKey
+          prevUser.publicKey === wallet.publicKey &&
+          prevUser.accessToken === accessToken
         ) {
           return prevUser;
         }
@@ -37,9 +46,10 @@ export function useAuth() {
         return {
           id: authId,
           address: wallet.address,
+          rawAddress: wallet.rawAddress,
           chain: wallet.chain,
           publicKey: wallet.publicKey,
-          accessToken: '',
+          accessToken,
         };
       });
     } else {
@@ -47,7 +57,7 @@ export function useAuth() {
     }
 
     setLoading(false);
-  }, [wallet]);
+  }, [wallet, isVerifying]);
 
   return { user, loading };
 }
