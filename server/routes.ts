@@ -14,6 +14,7 @@ import {
   registerTonPayment,
   retryPayment,
   confirmOrder,
+  getLedgerHistory,
 } from './services/userService';
 import {
   finishWalletProofSession,
@@ -174,6 +175,13 @@ export function createApiMiddleware(): Middleware {
       if (req.method === 'POST' && pathname === '/api/rewards/claim') {
         const body = await readJsonBody(req);
         const result = await claimReward(body);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/ledger/history') {
+        const body = await readJsonBody(req);
+        const result = await getLedgerHistory(body);
         sendJson(res, 200, result);
         return;
       }
