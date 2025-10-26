@@ -20,7 +20,7 @@ MongoDB (MONGODB_URI env)
 - `components/` – UI. `TodoList.tsx` now demonstrates user creation/listing via Mongo.
 - `hooks/` – `useApi.tsx` wraps REST helpers from `utils/api/sqlClient.ts`.
 - `server/` – Node-only code (models, services, middleware).
-- `utils/db.ts` – Mongoose connection with global cache. Requires `MONGODB_URI`.
+- `server/mongo.ts` – Shared MongoDB client + Mongoose connector. Requires `MONGODB_URI` & `MONGODB_DB`.
 - `utils/api/sqlClient.ts` – Fetch helpers used by React hooks/components.
 
 ## ⚠️ Development Guidelines
