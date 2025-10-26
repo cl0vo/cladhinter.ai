@@ -3,7 +3,6 @@ import { URL } from 'node:url';
 
 import { connectToDatabase } from './mongo';
 import {
-  addUser,
   claimReward,
   completeAdWatch,
   createOrder,
@@ -12,7 +11,6 @@ import {
   getUserBalance,
   getUserStats,
   initUser,
-  listUsers,
   registerTonPayment,
   retryPayment,
   confirmOrder,
@@ -75,30 +73,6 @@ export function createApiMiddleware(): Middleware {
     const { pathname } = url;
 
     try {
-      if (req.method === 'GET' && pathname === '/api/users') {
-        const users = await listUsers();
-        sendJson(res, 200, { users });
-        return;
-      }
-
-      if (req.method === 'POST' && pathname === '/api/users') {
-        const body = await readJsonBody<{ userId: string; walletAddress?: string | null; countryCode?: string | null }>(req);
-        if (!body?.userId) {
-          sendJson(res, 400, { error: 'userId is required' });
-          return;
-        }
-
-        const user = await addUser(body.userId, body.walletAddress, body.countryCode);
-        sendJson(res, 201, {
-          id: user._id,
-          energy: user.energy,
-          boost_level: user.boostLevel,
-          boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
-          country_code: user.countryCode ?? null,
-        });
-        return;
-      }
-
       if (req.method === 'POST' && pathname === '/api/users/init') {
         const body = await readJsonBody(req);
         const result = await initUser(body);
