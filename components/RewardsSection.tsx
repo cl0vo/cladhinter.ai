@@ -74,8 +74,6 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
         const response = await claimReward({
           userId: user.id,
           partnerId: partner.id,
-          rewardAmount: partner.reward,
-          partnerName: partner.name,
         });
 
         if (response?.success) {

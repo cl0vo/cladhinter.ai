@@ -1,0 +1,487 @@
+import { randomUUID } from 'node:crypto';
+
+import { BOOSTS, DAILY_VIEW_LIMIT, ENERGY_PER_AD, boostMultiplier } from '../../config/economy';
+import { adCreatives } from '../../config/ads';
+import { getActivePartners, getPartnerById } from '../../config/partners';
+import { UserModel } from '../models/User';
+import { WatchLogModel } from '../models/WatchLog';
+import { SessionLogModel } from '../models/SessionLog';
+import { OrderModel, type OrderStatus } from '../models/Order';
+import { RewardClaimModel } from '../models/RewardClaim';
+
+function ensureEntityExists<T>(entity: T | null | undefined, identifier: string): asserts entity is T {
+  if (!entity) {
+    throw new Error(`${identifier} not found`);
+  }
+}
+
+function getAdBaseReward(adId: string): number {
+  const creative = adCreatives.find((ad) => ad.id === adId);
+
+  if (!creative) {
+    return ENERGY_PER_AD.short;
+  }
+
+  if (creative.type === 'video') {
+    return ENERGY_PER_AD.long;
+  }
+
+  return ENERGY_PER_AD.short;
+}
+
+function todayKey(date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function resolveBoost(level: number) {
+  const boost = BOOSTS.find((item) => item.level === level);
+  if (!boost) {
+    throw new Error(`Unknown boost level: ${level}`);
+  }
+  return boost;
+}
+
+export async function addUser(userId: string, walletAddress?: string | null, countryCode?: string | null) {
+  const existing = await UserModel.findById(userId);
+
+  if (existing) {
+    return existing;
+  }
+
+  const user = await UserModel.create({
+    _id: userId,
+    walletAddress: walletAddress ?? null,
+    countryCode: countryCode ?? null,
+    energy: 0,
+    boostLevel: 0,
+  });
+
+  return user;
+}
+
+export async function initUser({
+  userId,
+  walletAddress,
+  countryCode,
+}: {
+  userId: string;
+  walletAddress?: string | null;
+  countryCode?: string | null;
+}) {
+  let user = await UserModel.findById(userId);
+
+  if (!user) {
+    user = await UserModel.create({
+      _id: userId,
+      walletAddress: walletAddress ?? null,
+      countryCode: countryCode ?? null,
+      energy: 0,
+      boostLevel: 0,
+    });
+  } else {
+    user.walletAddress = walletAddress ?? user.walletAddress ?? null;
+    user.countryCode = countryCode ?? user.countryCode ?? null;
+  }
+
+  user.sessionCount += 1;
+  await user.save();
+
+  await SessionLogModel.create({
+    userId,
+    countryCode: user.countryCode ?? null,
+  });
+
+  return {
+    user: {
+      id: user._id,
+      energy: user.energy,
+      boost_level: user.boostLevel,
+      boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+      country_code: user.countryCode ?? null,
+    },
+  };
+}
+
+export async function getUserBalance({
+  userId,
+}: {
+  userId: string;
+}) {
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  return {
+    energy: user.energy,
+    boost_level: user.boostLevel,
+    multiplier: boostMultiplier(user.boostLevel),
+    boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+  };
+}
+
+export async function completeAdWatch({
+  userId,
+  adId,
+}: {
+  userId: string;
+  adId: string;
+}) {
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  const now = new Date();
+  const today = todayKey(now);
+
+  if (user.dailyWatchDate !== today) {
+    user.dailyWatchDate = today;
+    user.dailyWatchCount = 0;
+  }
+
+  if (user.dailyWatchCount >= DAILY_VIEW_LIMIT) {
+    throw new Error('Daily ad limit reached');
+  }
+
+  const baseReward = getAdBaseReward(adId);
+  const multiplier = boostMultiplier(user.boostLevel);
+  const reward = Math.round(baseReward * multiplier * 100) / 100;
+
+  user.energy += reward;
+  user.totalEarned += reward;
+  user.totalWatches += 1;
+  user.dailyWatchCount += 1;
+  user.lastWatchAt = now;
+
+  await user.save();
+
+  await WatchLogModel.create({
+    userId,
+    adId,
+    reward,
+    baseReward,
+    multiplier,
+    countryCode: user.countryCode ?? null,
+  });
+
+  const dailyRemaining = Math.max(DAILY_VIEW_LIMIT - user.dailyWatchCount, 0);
+
+  return {
+    success: true,
+    reward,
+    new_balance: user.energy,
+    multiplier,
+    daily_watches_remaining: dailyRemaining,
+  };
+}
+
+function createPayload(): string {
+  return Buffer.from(randomUUID()).toString('base64url');
+}
+
+const DEFAULT_MERCHANT = 'UQDw8GgIlOX7SqLJKkpIB2JaOlU5n0g2qGifwtneUb1VMnVt';
+
+export async function createOrder({
+  userId,
+  boostLevel,
+}: {
+  userId: string;
+  boostLevel: number;
+}) {
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  const boost = resolveBoost(boostLevel);
+  const orderId = randomUUID();
+
+  const order = await OrderModel.create({
+    _id: orderId,
+    userId,
+    boostLevel,
+    tonAmount: boost.costTon,
+    status: 'pending',
+    payload: createPayload(),
+    merchantWallet: DEFAULT_MERCHANT,
+  });
+
+  return {
+    order_id: order._id,
+    address: order.merchantWallet,
+    amount: order.tonAmount,
+    payload: order.payload,
+    boost_name: boost.name,
+    duration_days: boost.durationDays ?? 0,
+  };
+}
+
+export async function confirmOrder({
+  userId,
+  orderId,
+  txHash,
+}: {
+  userId: string;
+  orderId: string;
+  txHash?: string | null;
+}) {
+  const order = await OrderModel.findById(orderId);
+  ensureEntityExists(order, `Order ${orderId}`);
+
+  if (order.userId !== userId) {
+    throw new Error('Order does not belong to user');
+  }
+
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  const boost = resolveBoost(order.boostLevel);
+
+  order.status = 'paid';
+  order.txHash = txHash ?? order.txHash ?? null;
+  order.paidAt = new Date();
+  order.lastPaymentCheck = new Date();
+
+  await order.save();
+
+  user.boostLevel = Math.max(user.boostLevel, order.boostLevel);
+
+  if (boost.durationDays) {
+    const expires = new Date();
+    expires.setUTCDate(expires.getUTCDate() + boost.durationDays);
+    user.boostExpiresAt = expires;
+  }
+
+  await user.save();
+
+  return {
+    success: true,
+    boost_level: user.boostLevel,
+    boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+    multiplier: boostMultiplier(user.boostLevel),
+  };
+}
+
+export async function registerTonPayment({
+  orderId,
+  wallet,
+  amount,
+  boc,
+  status,
+}: {
+  orderId: string;
+  wallet: string;
+  amount: number;
+  boc: string;
+  status?: OrderStatus;
+}) {
+  const order = await OrderModel.findById(orderId);
+  ensureEntityExists(order, `Order ${orderId}`);
+
+  order.status = status ?? 'pending_verification';
+  order.lastPaymentCheck = new Date();
+  order.verificationAttempts += 1;
+  order.lastEvent = {
+    id: Date.now(),
+    status: 'submitted',
+    receivedAt: new Date(),
+    wallet,
+    amount,
+  };
+  order.verificationError = null;
+
+  await order.save();
+
+  return {
+    success: true,
+    order_id: order._id,
+    status: order.status,
+  };
+}
+
+export async function retryPayment({
+  userId,
+  orderId,
+}: {
+  userId: string;
+  orderId: string;
+}) {
+  const order = await OrderModel.findById(orderId);
+  ensureEntityExists(order, `Order ${orderId}`);
+
+  if (order.userId !== userId) {
+    throw new Error('Order does not belong to user');
+  }
+
+  order.verificationAttempts += 1;
+  order.lastPaymentCheck = new Date();
+
+  await order.save();
+
+  return {
+    success: true,
+    status: order.status,
+    verification_attempts: order.verificationAttempts,
+    last_payment_check: order.lastPaymentCheck?.toISOString() ?? null,
+  };
+}
+
+export async function getPaymentStatus({
+  userId,
+  orderId,
+}: {
+  userId: string;
+  orderId: string;
+}) {
+  const order = await OrderModel.findById(orderId);
+  ensureEntityExists(order, `Order ${orderId}`);
+
+  if (order.userId !== userId) {
+    throw new Error('Order does not belong to user');
+  }
+
+  return {
+    order_id: order._id,
+    status: order.status,
+    paid_at: order.paidAt ? order.paidAt.toISOString() : null,
+    tx_hash: order.txHash ?? null,
+    tx_lt: order.txLt ?? null,
+    verification_attempts: order.verificationAttempts,
+    verification_error: order.verificationError ?? null,
+    last_payment_check: order.lastPaymentCheck ? order.lastPaymentCheck.toISOString() : null,
+    last_event: order.lastEvent
+      ? {
+          id: order.lastEvent.id,
+          status: order.lastEvent.status,
+          received_at: order.lastEvent.receivedAt.toISOString(),
+          wallet: order.lastEvent.wallet,
+          amount: order.lastEvent.amount,
+        }
+      : undefined,
+  };
+}
+
+export async function getUserStats({
+  userId,
+}: {
+  userId: string;
+}) {
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  const [watchHistory, todayCount, sessions, totalEarned] = await Promise.all([
+    WatchLogModel.find({ userId }).sort({ createdAt: -1 }).limit(25).lean(),
+    WatchLogModel.countDocuments({
+      userId,
+      createdAt: { $gte: new Date(todayKey()) },
+    }),
+    SessionLogModel.find({ userId }).sort({ createdAt: -1 }).limit(10).lean(),
+    WatchLogModel.aggregate([
+      { $match: { userId } },
+      { $group: { _id: null, total: { $sum: '$reward' } } },
+    ]),
+  ]);
+
+  const totalEarnedValue = totalEarned[0]?.total ?? 0;
+
+  return {
+    totals: {
+      energy: user.energy,
+      watches: user.totalWatches,
+      earned: totalEarnedValue,
+      sessions: user.sessionCount,
+      today_watches: todayCount,
+      daily_limit: DAILY_VIEW_LIMIT,
+    },
+    boost: {
+      level: user.boostLevel,
+      multiplier: boostMultiplier(user.boostLevel),
+      expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+    },
+    country_code: user.countryCode ?? null,
+    watch_history: watchHistory.map((item) => ({
+      id: String(item._id),
+      user_id: userId,
+      ad_id: item.adId,
+      reward: item.reward,
+      base_reward: item.baseReward,
+      multiplier: item.multiplier,
+      created_at: item.createdAt.toISOString(),
+      country_code: item.countryCode ?? null,
+    })),
+    session_history: sessions.map((session) => ({
+      id: String(session._id),
+      user_id: userId,
+      country_code: session.countryCode ?? null,
+      created_at: session.createdAt.toISOString(),
+      last_activity_at: session.lastActivityAt.toISOString(),
+    })),
+  };
+}
+
+export async function getRewardStatus({
+  userId,
+}: {
+  userId: string;
+}) {
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  const claimed = user.claimedPartners;
+  const available = getActivePartners().filter((partner) => !claimed.includes(partner.id)).length;
+
+  return {
+    claimed_partners: claimed,
+    available_rewards: available,
+  };
+}
+
+export async function claimReward({
+  userId,
+  partnerId,
+}: {
+  userId: string;
+  partnerId: string;
+}) {
+  const partner = getPartnerById(partnerId);
+
+  if (!partner || !partner.active) {
+    throw new Error('Partner reward is unavailable');
+  }
+
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  if (user.claimedPartners.includes(partnerId)) {
+    throw new Error('Reward already claimed');
+  }
+
+  user.claimedPartners.push(partnerId);
+  user.energy += partner.reward;
+  user.totalEarned += partner.reward;
+
+  await user.save();
+
+  await RewardClaimModel.create({
+    userId,
+    partnerId,
+    reward: partner.reward,
+    partnerName: partner.name,
+  });
+
+  return {
+    success: true,
+    reward: partner.reward,
+    new_balance: user.energy,
+    partner_name: partner.name,
+  };
+}
+
+export async function listUsers() {
+  const users = await UserModel.find().sort({ createdAt: -1 }).lean();
+
+  return users.map((user) => ({
+    id: user._id,
+    energy: user.energy,
+    boost_level: user.boostLevel,
+    boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+    country_code: user.countryCode ?? null,
+    created_at: user.createdAt?.toISOString?.() ?? new Date().toISOString(),
+  }));
+}
+

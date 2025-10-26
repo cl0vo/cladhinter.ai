@@ -19,10 +19,11 @@
     "components",
     "config",
     "hooks",
+    "server",
     "styles",
     "types",
     "utils",
     "src"
   ],
-  "exclude": ["dist", "node_modules", "supabase/functions"]
+  "exclude": ["dist", "node_modules"]
 }

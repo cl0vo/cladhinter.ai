@@ -5,9 +5,6 @@ export default defineConfig({
     environment: 'node',
   },
   resolve: {
-    alias: [
-      { find: /^npm:(.+)$/, replacement: '$1' },
-      { find: /^jsr:@supabase\/supabase-js@.+$/, replacement: '@supabase/supabase-js' },
-    ],
+    alias: [{ find: /^npm:(.+)$/, replacement: '$1' }],
   },
 });
