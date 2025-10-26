@@ -106,7 +106,6 @@ export function WalletScreen() {
       const orderData = await createOrderRpc({
         userId: user.id,
         boostLevel,
-        walletAddress: user.address,
       });
 
       if (!orderData) {

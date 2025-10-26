@@ -21,7 +21,6 @@ export function useUserData() {
 
     const data = await getUserBalance({
       userId: user.id,
-      walletAddress: user.address,
     });
 
     if (data) {
