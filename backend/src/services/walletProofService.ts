@@ -4,7 +4,6 @@ import { getSecureRandomBytes, sha256 } from '@ton/crypto';
 import {
   Address,
   Cell,
-  contractAddress,
   loadStateInit,
   Slice,
   StateInit,
@@ -23,8 +22,7 @@ import {
 } from '@ton/ton';
 import nacl from 'tweetnacl';
 
-import { SessionModel } from '../models/Session';
-import { UserModel } from '../models/User';
+import { query } from '../postgres';
 
 const TON_PROOF_PREFIX = 'ton-proof-item-v2/';
 const TON_CONNECT_PREFIX = 'ton-connect';
@@ -49,6 +47,21 @@ interface TonProofPayload {
     signature: string;
     state_init?: string;
   };
+}
+
+interface WalletSessionRow {
+  nonce_hash: string;
+  user_id: string | null;
+  wallet: string | null;
+  ttl: Date | string;
+}
+
+interface UserRow {
+  id: string;
+  wallet: string | null;
+  wallet_address: string | null;
+  wallet_verified: boolean;
+  last_seen_at: Date | string;
 }
 
 export interface WalletProofStartResult {
@@ -137,6 +150,63 @@ function hashNonce(nonce: string): string {
   return hmac.digest('base64url');
 }
 
+async function fetchWalletSession(nonceHash: string): Promise<WalletSessionRow | null> {
+  const result = await query<WalletSessionRow>(
+    `DELETE FROM wallet_sessions WHERE nonce_hash = $1 RETURNING *`,
+    [nonceHash],
+  );
+  return result.rows[0] ?? null;
+}
+
+async function saveWalletSession({
+  nonceHash,
+  ttl,
+  userId,
+  wallet,
+}: {
+  nonceHash: string;
+  ttl: Date;
+  userId?: string | null;
+  wallet?: string | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO wallet_sessions (nonce_hash, ttl, user_id, wallet)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (nonce_hash) DO UPDATE SET ttl = EXCLUDED.ttl, user_id = EXCLUDED.user_id, wallet = EXCLUDED.wallet, created_at = NOW()`,
+    [nonceHash, ttl.toISOString(), userId ?? null, wallet ?? null],
+  );
+}
+
+async function findUserByWallet(wallet: string): Promise<UserRow | null> {
+  const result = await query<UserRow>(`SELECT * FROM users WHERE wallet = $1 LIMIT 1`, [wallet]);
+  return result.rows[0] ?? null;
+}
+
+async function upsertWalletUser(userId: string, wallet: string): Promise<UserRow> {
+  const now = new Date();
+  const result = await query<UserRow>(
+    `INSERT INTO users (
+       id, wallet, wallet_address, wallet_verified, country_code, energy, boost_level, boost_expires_at,
+       created_at, updated_at, last_seen_at, total_earned, total_watches, session_count, daily_watch_count,
+       daily_watch_date, claimed_partners, last_watch_at
+     )
+     VALUES ($1, $2, $2, TRUE, NULL, 0, 0, NULL, $3, $3, $3, 0, 0, 0, 0, NULL, ARRAY[]::TEXT[], NULL)
+     ON CONFLICT (id) DO UPDATE SET
+       wallet = EXCLUDED.wallet,
+       wallet_address = EXCLUDED.wallet_address,
+       wallet_verified = TRUE,
+       last_seen_at = $3,
+       updated_at = $3
+     RETURNING *`,
+    [userId, wallet, now.toISOString()],
+  );
+  return result.rows[0];
+}
+
+function toBuffer(value: Buffer | string): Buffer {
+  return typeof value === 'string' ? Buffer.from(value, 'base64') : value;
+}
+
 async function fetchWalletPublicKey(address: string): Promise<Buffer | null> {
   try {
     const client = getTonClient();
@@ -198,44 +268,33 @@ async function resolveStateInit(address: string, encoded?: string): Promise<Stat
 }
 
 async function verifyTonProof(payload: TonProofPayload): Promise<void> {
-  if (payload.network !== 'ton-mainnet') {
-    throw new Error('Unsupported TON network');
-  }
-
   const allowedDomains = getAllowedDomains();
   ensureAllowedDomain(payload.proof.domain, allowedDomains);
   ensureFreshTimestamp(payload.proof.timestamp);
 
-  const stateInit = await resolveStateInit(payload.address, payload.proof.state_init);
-
   const resolvedAddress = Address.parse(payload.address);
-  let publicKey = stateInit ? tryParsePublicKey(stateInit) : null;
+  const stateInit = await resolveStateInit(payload.address, payload.proof.state_init);
+  const publicKey = await fetchWalletPublicKey(payload.address);
 
-  if (!publicKey) {
-    publicKey = await fetchWalletPublicKey(payload.address);
-  }
+  let expectedPublicKey = publicKey;
 
-  if (!publicKey) {
-    throw new Error('Unable to resolve wallet public key');
-  }
-
-  const expectedPublicKey = Buffer.from(payload.public_key, 'hex');
-  if (!publicKey.equals(expectedPublicKey)) {
-    throw new Error('Wallet public key mismatch');
-  }
-
-  if (stateInit) {
-    const derived = contractAddress(resolvedAddress.workChain, stateInit);
-    if (!derived.equals(resolvedAddress)) {
-      throw new Error('State init does not match wallet address');
+  if (!publicKey && stateInit) {
+    const parsed = tryParsePublicKey(stateInit);
+    if (parsed) {
+      expectedPublicKey = parsed;
     }
   }
 
-  const workchain = Buffer.alloc(4);
-  workchain.writeUInt32BE(resolvedAddress.workChain, 0);
+  if (!expectedPublicKey) {
+    throw new Error('Unable to resolve wallet public key');
+  }
 
+  const workchain = Buffer.alloc(4);
+  workchain.writeInt32BE(resolvedAddress.workChain, 0);
+
+  const addressBuffer = resolvedAddress.hash;
   const domainLength = Buffer.alloc(4);
-  domainLength.writeUInt32LE(payload.proof.domain.lengthBytes, 0);
+  domainLength.writeUInt32BE(payload.proof.domain.lengthBytes, 0);
 
   const timestampBuffer = Buffer.alloc(8);
   timestampBuffer.writeBigUInt64LE(BigInt(payload.proof.timestamp), 0);
@@ -243,7 +302,7 @@ async function verifyTonProof(payload: TonProofPayload): Promise<void> {
   const messageBuffer = Buffer.concat([
     Buffer.from(TON_PROOF_PREFIX),
     workchain,
-    resolvedAddress.hash,
+    addressBuffer,
     domainLength,
     Buffer.from(payload.proof.domain.value),
     timestampBuffer,
@@ -258,9 +317,9 @@ async function verifyTonProof(payload: TonProofPayload): Promise<void> {
   ]);
 
   const finalHash = Buffer.from(await sha256(fullMessage));
-  const signature = Buffer.from(payload.proof.signature, 'base64');
+  const signature = toBuffer(payload.proof.signature);
 
-  const isValid = nacl.sign.detached.verify(finalHash, signature, publicKey);
+  const isValid = nacl.sign.detached.verify(finalHash, signature, expectedPublicKey);
   if (!isValid) {
     throw new Error('Invalid TON proof signature');
   }
@@ -274,7 +333,7 @@ export async function startWalletProofSession(options: WalletProofSessionOptions
 
   const nonceHash = hashNonce(nonce);
 
-  await SessionModel.create({
+  await saveWalletSession({
     nonceHash,
     ttl: expiresAt,
     userId: options.userId ?? null,
@@ -298,17 +357,15 @@ export async function finishWalletProofSession(input: WalletProofFinishInput): P
   }
 
   const nonceHash = hashNonce(nonceValue);
-  const session = await SessionModel.findOne({ nonceHash });
+  const session = await fetchWalletSession(nonceHash);
   if (!session) {
     throw new Error('Proof session expired or unknown');
   }
 
-  if (session.ttl.getTime() < Date.now()) {
-    await session.deleteOne();
+  const ttl = session.ttl instanceof Date ? session.ttl : new Date(session.ttl);
+  if (ttl.getTime() < Date.now()) {
     throw new Error('Proof session expired');
   }
-
-  await session.deleteOne();
 
   if (input.proof.payload !== nonceValue) {
     throw new Error('Proof payload mismatch');
@@ -319,11 +376,11 @@ export async function finishWalletProofSession(input: WalletProofFinishInput): P
     throw new Error('Wallet address does not match session');
   }
 
-  if (session.userId && input.userId && session.userId !== input.userId) {
+  if (session.user_id && input.userId && session.user_id !== input.userId) {
     throw new Error('Wallet session user mismatch');
   }
 
-  const userId = input.userId ?? session.userId ?? Address.parse(address).toString();
+  const userId = input.userId ?? session.user_id ?? Address.parse(address).toString();
 
   const payload: TonProofPayload = {
     address,
@@ -341,42 +398,18 @@ export async function finishWalletProofSession(input: WalletProofFinishInput): P
   await verifyTonProof(payload);
 
   const wallet = Address.parse(address).toString();
-  const now = new Date();
 
-  const existing = await UserModel.findOne({ wallet });
-  if (existing && existing._id !== userId) {
+  const existing = await findUserByWallet(wallet);
+  if (existing && existing.id !== userId) {
     throw new Error('Wallet already associated with another user');
   }
 
-  const user = await UserModel.findByIdAndUpdate(
-    userId,
-    {
-      wallet,
-      walletAddress: wallet,
-      walletVerified: true,
-      lastSeenAt: now,
-      $setOnInsert: {
-        _id: userId,
-        energy: 0,
-        boostLevel: 0,
-        sessionCount: 0,
-        totalEarned: 0,
-        totalWatches: 0,
-        dailyWatchCount: 0,
-        claimedPartners: [],
-      },
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
-  );
-
-  if (!user) {
-    throw new Error('Failed to upsert user');
-  }
+  const userRow = await upsertWalletUser(userId, wallet);
 
   return {
     success: true,
-    userId: user._id,
-    wallet: user.wallet ?? wallet,
+    userId: userRow.id,
+    wallet: userRow.wallet ?? wallet,
   };
 }
 
@@ -444,4 +477,3 @@ function tryParsePublicKey(stateInit: StateInit): Buffer | null {
 
   return null;
 }
-

@@ -3,31 +3,26 @@ import type { AddressInfo } from 'node:net';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const connectToDatabaseMock = vi.fn();
-const userFindByIdMock = vi.fn();
-const watchLogCreateMock = vi.fn();
-const ledgerCreateMock = vi.fn();
+const ensureDatabaseMock = vi.fn();
+const completeAdWatchMock = vi.fn();
 
-vi.mock('../../backend/src/mongo', () => ({
-  connectToDatabase: connectToDatabaseMock,
+vi.mock('../../backend/src/postgres', () => ({
+  ensureDatabase: ensureDatabaseMock,
 }));
 
-vi.mock('../../backend/src/models/User', () => ({
-  UserModel: {
-    findById: userFindByIdMock,
-  },
-}));
-
-vi.mock('../../backend/src/models/WatchLog', () => ({
-  WatchLogModel: {
-    create: watchLogCreateMock,
-  },
-}));
-
-vi.mock('../../backend/src/models/Ledger', () => ({
-  LedgerModel: {
-    create: ledgerCreateMock,
-  },
+vi.mock('../../backend/src/services/userService', () => ({
+  completeAdWatch: completeAdWatchMock,
+  claimReward: vi.fn(),
+  createOrder: vi.fn(),
+  confirmOrder: vi.fn(),
+  getPaymentStatus: vi.fn(),
+  getRewardStatus: vi.fn(),
+  getUserBalance: vi.fn(),
+  getUserStats: vi.fn(),
+  initUser: vi.fn(),
+  registerTonPayment: vi.fn(),
+  retryPayment: vi.fn(),
+  getLedgerHistory: vi.fn(),
 }));
 
 const { createApiMiddleware } = await import('../../backend/src/routes');
@@ -49,33 +44,13 @@ describe('ledger entries', () => {
   let baseUrl: string;
 
   beforeEach(async () => {
-    connectToDatabaseMock.mockResolvedValue(undefined);
-
-    const userDoc = {
-      _id: 'user-ledger',
-      wallet: 'EQuserledgerwallet',
-      walletAddress: 'EQuserledgerwallet',
-      energy: 0,
-      totalEarned: 0,
-      totalWatches: 0,
-      dailyWatchCount: 0,
-      dailyWatchDate: null as string | null,
-      countryCode: null as string | null,
-      lastWatchAt: null as Date | null,
-      lastSeenAt: new Date(),
-      sessionCount: 0,
-      claimedPartners: [] as string[],
-      save: vi.fn(async () => undefined),
-    };
-
-    userFindByIdMock.mockResolvedValue(userDoc);
-
-    watchLogCreateMock.mockResolvedValue({
-      _id: 'watch-log-id',
-    });
-
-    ledgerCreateMock.mockResolvedValue({
-      _id: 'ledger-entry-id',
+    ensureDatabaseMock.mockResolvedValue(undefined);
+    completeAdWatchMock.mockResolvedValue({
+      success: true,
+      reward: 25,
+      new_balance: 25,
+      multiplier: 1,
+      daily_watches_remaining: 9,
     });
 
     const middleware = createApiMiddleware();
@@ -116,16 +91,7 @@ describe('ledger entries', () => {
     const body = (await response.json()) as { success?: boolean };
     expect(body.success).toBe(true);
 
-    expect(connectToDatabaseMock).toHaveBeenCalled();
-    expect(ledgerCreateMock).toHaveBeenCalledTimes(1);
-    expect(ledgerCreateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 'user-ledger',
-        wallet: 'EQuserledgerwallet',
-        amount: 25,
-        type: 'credit',
-      }),
-    );
-    expect(ledgerCreateMock.mock.calls[0]?.[0]?.metadata).toMatchObject({ adId: 'demo_video_1' });
+    expect(ensureDatabaseMock).toHaveBeenCalled();
+    expect(completeAdWatchMock).toHaveBeenCalledWith({ userId: 'user-ledger', adId: 'demo_video_1' });
   });
 });

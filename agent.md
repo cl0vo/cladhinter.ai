@@ -12,20 +12,19 @@ frontend/utils/api/sqlClient.ts
         ↓
 /api routes (backend/src/routes.ts)
         ↓
-Mongoose services (backend/src/services/userService.ts)
+Postgres-backed services (backend/src/services/userService.ts)
         ↓
-MongoDB (MONGOBASE_MONGODB_URI env)
+Neon/PostgreSQL (DATABASE_URL env)
 ```
 
 ## 📁 Key directories
 - `frontend/components` – UI building blocks and screens.
 - `frontend/hooks` – auth, TON connect, API data loaders.
-- `backend/src/models` – MongoDB schemas.
 - `backend/src/services` – business rules (ad rewards, boosts, ledger, wallet proof).
 - `shared/config` – boost table, ad catalog, partner campaigns.
 
 ## ⚠️ Development checklist
-- Copy `.env.example` to `.env` and configure MongoDB + TON secrets before running either workspace.
+- Copy `.env.example` to `.env` and configure Postgres + TON secrets before running either workspace.
 - Start the backend with `npm run dev:backend` so the frontend proxy can forward `/api` calls during local development.
 - Avoid importing backend files into the frontend bundle; prefer API calls or shared config.
 - Update documentation whenever you change behaviour affecting either workspace.
@@ -33,7 +32,7 @@ MongoDB (MONGOBASE_MONGODB_URI env)
 ## 🛠 Tooling
 - `npm run dev:frontend` – Vite dev server (proxies `/api` to backend).
 - `npm run dev:backend` – Node HTTP server via `tsx` watch mode.
-- `npm run db:indexes` – Create MongoDB indexes using backend scripts.
+- `npm run db:indexes` – Ensure Postgres schema/tables using backend scripts.
 - `npm run test` – Vitest suite covering shared config and API flows (run from repo root).
 
 Happy hacking! 🛠️

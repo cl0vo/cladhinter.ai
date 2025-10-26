@@ -9,13 +9,13 @@ Cloud mining simulator where users earn energy by watching ads, unlock boosts wi
 ```
 cladhunter.ai/
 ├── frontend/   React + Vite client (hooks, components, UI assets)
-├── backend/    Node API (MongoDB models, TON wallet proof, scripts)
+├── backend/    Node API (Postgres queries, TON wallet proof, scripts)
 ├── shared/     Read-only config shared by both apps (ads, partners, economy)
 └── package.json  Workspace scripts for running both sides
 ```
 
 * **Frontend** – React 18, TypeScript, Tailwind, Radix UI primitives and Motion for interactions. Fetch helpers live in `frontend/utils/api` and assume the API is reachable via `/api/*`.
-* **Backend** – Headless HTTP server exposing REST endpoints, backed by MongoDB + Mongoose. Wallet proof flows rely on TON SDK utilities.
+* **Backend** – Headless HTTP server exposing REST endpoints, backed by PostgreSQL. Wallet proof flows rely on TON SDK utilities.
 * **Shared** – Source-of-truth configuration (boost tiers, ad catalog, partner campaigns) consumed by both the UI and the API.
 
 ---
@@ -26,7 +26,7 @@ cladhunter.ai/
 
    ```bash
    cp .env.example .env
-   # Fill in MongoDB URI, TON keys and secrets.
+   # Fill in Postgres connection, TON keys and secrets.
    ```
 
 2. Install dependencies for the workspaces (generates a single lockfile at the repo root).
@@ -56,7 +56,7 @@ The frontend dev server proxies `/api/*` requests to the backend (`http://localh
 - 🎯 **Ad-based mining:** watch creatives to earn energy rewards tied to boost multipliers.
 - ⚡ **Boost marketplace:** purchase time-limited multipliers via TON payments.
 - 🤝 **Partner quests:** curated partner actions yield additional energy payouts.
-- 📊 **Realtime stats:** ledger history and aggregate metrics synced from MongoDB.
+- 📊 **Realtime stats:** ledger history and aggregate metrics synced from PostgreSQL.
 - 🔐 **TON wallet proof:** wallet ownership verified through signed payloads before rewards unlock.
 
 ---
@@ -69,20 +69,20 @@ The frontend dev server proxies `/api/*` requests to the backend (`http://localh
 | `npm run dev:frontend` | Launch Vite + React frontend with proxy to the API. |
 | `npm run build` | Build the frontend bundle. |
 | `npm run test` | Run Vitest suites (frontend-focused). |
-| `npm run db:indexes` | Ensure MongoDB indexes (runs in the backend workspace). |
+| `npm run db:indexes` | Ensure Postgres tables/indexes (runs in the backend workspace). |
 
 ---
 
 ## Architecture
 
 ```
-React components/hooks  →  fetch helpers (/api/*)  →  Backend routes  →  Mongoose services  →  MongoDB
+React components/hooks  →  fetch helpers (/api/*)  →  Backend routes  →  Postgres services  →  Neon/PostgreSQL
                                                      │
                                                      └── TON SDK for wallet proof & payment reconciliation
 ```
 
 - Backend routes live in `backend/src/routes.ts` and compose middleware-style handlers.
-- Domain logic is stored under `backend/src/services/*` with dedicated models in `backend/src/models/*`.
+- Domain logic is stored under `backend/src/services/*` with SQL access helpers in `backend/src/postgres.ts`.
 - Frontend fetch helpers reside in `frontend/utils/api/sqlClient.ts` and expect JSON responses.
 - Shared configuration is imported from `@shared/config/*` (see `frontend/tsconfig.json` for alias setup).
 
@@ -92,7 +92,8 @@ React components/hooks  →  fetch helpers (/api/*)  →  Backend routes  →  M
 
 | Name | Purpose |
 | --- | --- |
-| `MONGOBASE_MONGODB_URI` | Connection string for MongoDB. |
+| `DATABASE_URL` | Primary Postgres connection string (Neon pooled endpoint recommended). |
+| `DATABASE_URL_UNPOOLED` | Optional direct Postgres endpoint for scripts/background jobs. |
 | `SERVER_HMAC_SECRET` | Secret used to sign TON proof nonces. |
 | `TON_PROOF_ALLOWED_DOMAINS` | Comma-separated domains accepted in TON proof payloads. |
 | `TON_MAINNET_RPC` | TON RPC endpoint used to verify wallet state. |
