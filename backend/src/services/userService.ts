@@ -5,6 +5,7 @@ import { adCreatives } from '../../../shared/config/ads';
 import { getActivePartners, getPartnerById } from '../../../shared/config/partners';
 import { getExecutor, query, withTransaction, type SqlExecutor } from '../postgres';
 import { verifyAccessToken } from './walletProofService';
+import type { QueryResultRow } from 'pg';
 
 export type OrderStatus =
   | 'pending'
@@ -13,7 +14,7 @@ export type OrderStatus =
   | 'paid'
   | 'failed';
 
-interface UserRow {
+interface UserRow extends QueryResultRow {
   id: string;
   wallet: string | null;
   wallet_address: string | null;
@@ -34,7 +35,7 @@ interface UserRow {
   last_watch_at: Date | string | null;
 }
 
-interface OrderRow {
+interface OrderRow extends QueryResultRow {
   id: string;
   user_id: string;
   boost_level: number;
@@ -52,7 +53,7 @@ interface OrderRow {
   last_event: unknown | null;
 }
 
-interface WatchLogRow {
+interface WatchLogRow extends QueryResultRow {
   id: string;
   user_id: string;
   ad_id: string;
@@ -63,7 +64,7 @@ interface WatchLogRow {
   created_at: Date | string;
 }
 
-interface SessionLogRow {
+interface SessionLogRow extends QueryResultRow {
   id: string;
   user_id: string;
   country_code: string | null;
@@ -71,7 +72,7 @@ interface SessionLogRow {
   last_activity_at: Date | string;
 }
 
-interface LedgerRow {
+interface LedgerRow extends QueryResultRow {
   id: string;
   user_id: string;
   wallet: string;

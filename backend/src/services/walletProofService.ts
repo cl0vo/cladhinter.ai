@@ -24,6 +24,7 @@ import nacl from 'tweetnacl';
 
 import { query } from '../postgres';
 import { UnauthorizedError } from '../errors';
+import type { QueryResultRow } from 'pg';
 
 const TON_PROOF_PREFIX = 'ton-proof-item-v2/';
 const TON_CONNECT_PREFIX = 'ton-connect';
@@ -57,14 +58,14 @@ interface TonProofPayload {
   };
 }
 
-interface WalletSessionRow {
+interface WalletSessionRow extends QueryResultRow {
   nonce_hash: string;
   user_id: string | null;
   wallet: string | null;
   ttl: Date | string;
 }
 
-interface UserRow {
+interface UserRow extends QueryResultRow {
   id: string;
   wallet: string | null;
   wallet_address: string | null;
