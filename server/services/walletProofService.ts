@@ -21,7 +21,7 @@ import {
   WalletContractV5Beta,
   WalletContractV5R1,
 } from '@ton/ton';
-import { sign } from 'tweetnacl';
+import nacl from 'tweetnacl';
 
 import { SessionModel } from '../models/Session';
 import { UserModel } from '../models/User';
@@ -249,7 +249,7 @@ async function verifyTonProof(payload: TonProofPayload): Promise<void> {
   const finalHash = Buffer.from(await sha256(fullMessage));
   const signature = Buffer.from(payload.proof.signature, 'base64');
 
-  const isValid = sign.detached.verify(finalHash, signature, publicKey);
+  const isValid = nacl.sign.detached.verify(finalHash, signature, publicKey);
   if (!isValid) {
     throw new Error('Invalid TON proof signature');
   }
