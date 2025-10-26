@@ -168,10 +168,12 @@ Blockchain (TON - Future Integration)
 │   ├── partners.ts           # Partner rewards config ⭐ NEW
 │   └── ads.ts                # Ad creatives config
 ├── server/               # MongoDB data models and API middleware
+│   ├── mongo.ts             # Shared MongoDB client + Mongoose connector ⭐ NEW
 │   ├── models/               # Mongoose schemas
 │   └── services/             # Business logic (orders, rewards, stats)
+├── scripts/              # Node maintenance utilities ⭐ NEW
+│   └── create-indexes.ts     # Ensures database indexes for core collections
 ├── utils/                # Utility functions
-│   ├── db.ts                # MongoDB connection helper (mongoose)
 │   ├── helpers.ts           # Helper functions
 │   ├── telegram.ts          # Telegram Web App utils
 │   └── test-api.ts          # API testing tools
@@ -196,13 +198,26 @@ The app runs on [http://localhost:5173](http://localhost:5173) by default.
 
 ---
 
+## 🛠️ Local Development
+
+1. **Copy environment file**: `cp .env.example .env` and update the placeholders with your Atlas connection string, database name, and TON configuration.
+2. **Install dependencies**: `npm install`.
+3. **Provision database indexes**: `npm run db:indexes` creates the required indexes for the `users`, `ledger`, and `sessions` collections (see below).
+4. **Start the dev server**: `npm run dev`.
+
+The dev middleware automatically connects to MongoDB through `server/mongo.ts`, which shares the cached `MongoClient` between the index script and the Vite API routes.
+
+---
+
 ## 🌍 Environment Variables
 | Variable | Description |
 | --- | --- |
-| `MONGODB_URI` | Connection string for MongoDB Atlas (used by Mongoose). |
+| `MONGODB_URI` | Connection string for MongoDB Atlas (used by MongoDB client/Mongoose). |
+| `MONGODB_DB` | Database name used for the Cladhunter collections. |
 | `TON_API_KEY` | Optional key for TON payment gateway integrations. |
 | `NEXT_PUBLIC_TON_APP_NAME` | Public identifier shown in TON Connect. |
 | `VERCEL_ENV` | Optional deployment stage flag for logging. |
+| `VITE_TON_MANIFEST_URL` | Optional override for the TonConnect manifest URL. |
 
 ### Frontend
 Deploy to any static hosting:
@@ -211,16 +226,26 @@ Deploy to any static hosting:
 - **GitHub Pages**: Push to gh-pages branch
 
 ### Backend
-MongoDB is accessed directly via the built-in Vite middleware. Ensure `MONGODB_URI` is configured before running the dev server.
+MongoDB is accessed directly via the built-in Vite middleware. Ensure both `MONGODB_URI` and `MONGODB_DB` are configured before running the dev server.
+
+### Database Index Script
+
+- `npm run db:indexes` runs `scripts/create-indexes.ts`, which connects with the shared `MongoClient` and ensures the following indexes exist:
+  - `users`: unique index on `{ wallet: 1 }` for wallet identity lookups.
+  - `ledger`: unique index on `{ idemKey: 1 }` and compound index on `{ wallet: 1, createdAt: -1 }` for idempotent reward/payment writes.
+  - `sessions`: TTL index on `{ ttl: 1 }` so ephemeral sessions expire automatically.
+
+Re-run the script after deploying new environments or when restoring from a backup to guarantee the indexes are present.
 
 ---
 
 ## 🚀 Deployment (Vercel)
 1. Push your branch to GitHub.
 2. Ensure the Vercel project is connected to the GitHub repository.
-3. In Vercel dashboard, add the required environment variables (`MONGODB_URI`, `TON_API_KEY`, `NEXT_PUBLIC_TON_APP_NAME`, `VERCEL_ENV`).
-4. Trigger a deployment (Vercel automatically deploys each push).
-5. Verify the preview build, then promote to production when ready.
+3. In the Vercel dashboard, configure the environment variables from `.env.example` (`MONGODB_URI`, `MONGODB_DB`, `TON_API_KEY`, `NEXT_PUBLIC_TON_APP_NAME`, `VERCEL_ENV`, `VITE_TON_MANIFEST_URL`).
+4. Deploy the project (Vercel automatically builds each push).
+5. After the first deployment, run `npm run db:indexes` locally or from a CI job against the production database to provision the MongoDB indexes.
+6. Verify the preview build, then promote to production when ready.
 
 ---
 

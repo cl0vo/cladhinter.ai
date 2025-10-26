@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
-import { connectToDatabase } from './utils/db';
+import { connectToDatabase } from './server/mongo';
 import { createApiMiddleware } from './server/routes';
 
 export default defineConfig({

@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 
-import { connectToDatabase } from '../utils/db';
+import { connectToDatabase } from './mongo';
 import {
   addUser,
   claimReward,
