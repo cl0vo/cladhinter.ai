@@ -158,7 +158,10 @@ Blockchain (TON - Future Integration)
 │   ├── RewardsSection.tsx    # Partner rewards ⭐ NEW
 │   ├── StatsScreen.tsx       # Statistics & charts
 │   ├── WalletScreen.tsx      # Wallet & boosts
-│   └── ui/                   # Reusable UI components
+│   └── ui/                   # Reusable UI building blocks in use
+│       ├── button.tsx            # Primary action button component
+│       ├── sonner.tsx            # Toast notifications wrapper
+│       └── utils.ts              # Tailwind class combiner helper
 ├── hooks/                # Custom React hooks
 │   ├── useAuth.tsx           # Authentication
 │   ├── useUserData.tsx       # User state
@@ -181,6 +184,12 @@ Blockchain (TON - Future Integration)
 ├── App.tsx               # Main app component
 └── styles/               # Global styles
 ```
+
+### Active UI Modules
+
+- `components/ui/button.tsx` — shared CTA button used across wallet, stats, Ton Connect, and the error boundary.
+- `components/ui/sonner.tsx` — Toaster wrapper rendered in `App.tsx` for in-app notifications.
+- `components/ui/utils.ts` — local `cn` helper consumed by the button component.
 
 ---
 
