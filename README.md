@@ -1,10 +1,10 @@
 # 🆑 Cladhunter
 
 > **Cloud Mining Simulator & Watch-to-Earn Platform**
-> 
-> A mobile-first web app where users earn crypto energy by watching ads and can boost their earnings with TON blockchain payments.
+>
+> Mobile-first web app where users earn 🆑 energy by watching ads, manage boosts through TON payments, and track progress in real time.
 
-![Version](https://img.shields.io/badge/version-1.0.0-red)
+![Version](https://img.shields.io/badge/version-1.1.0-red)
 ![React](https://img.shields.io/badge/React-18+-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose-brightgreen)
@@ -13,14 +13,12 @@
 ---
 
 ## ✨ Features
-
 - 🎯 **Ad-Based Mining**: Watch ads to earn energy (🆑)
-- 🎁 **Partner Rewards**: Earn coins for subscribing to Telegram/X channels
+- 🎁 **Partner Rewards**: Complete social quests for bonus energy
 - 📱 **Telegram Web App**: Native integration with haptic feedback
-- 🎬 **Partner Ads**: Fullscreen video/image ads with 9:16 format
 - ⚡ **Boost System**: Purchase multipliers with TON cryptocurrency
-- 📊 **Statistics Dashboard**: Track your earnings and performance
-- 💰 **Wallet Integration**: Manage balance and transactions
+- 📊 **Statistics Dashboard**: Monitor earnings and performance
+- 💰 **Wallet Integration**: Manage balances and history
 - 📲 **Mobile-Optimized**: Safe area insets, touch targets, responsive design
 - 🎨 **Dark Futuristic Theme**: Glassmorphic UI with red accents
 - 🔐 **Secure Backend**: Node middleware + MongoDB (Mongoose models)
@@ -34,10 +32,11 @@
 ### Local Development
 
 ```bash
-# Clone or download the project
-cd cladhunter
+# Clone repository
+git clone https://github.com/<org>/cladhunter.ai.git
+cd cladhunter.ai
 
-# Install dependencies (if needed)
+# Install dependencies
 npm install
 
 # Set up environment variables
@@ -193,15 +192,17 @@ await window.testApi.testGetBalance()
 await window.testApi.testCompleteAd('ad_demo')
 ```
 
-### Simulation
-```bash
-# Simulate 5 mining sessions with cooldown:
-await window.testApi.simulateMining(5)
-```
+The app runs on [http://localhost:5173](http://localhost:5173) by default.
 
 ---
 
-## 🚀 Deployment
+## 🌍 Environment Variables
+| Variable | Description |
+| --- | --- |
+| `MONGODB_URI` | Connection string for MongoDB Atlas (used by Mongoose). |
+| `TON_API_KEY` | Optional key for TON payment gateway integrations. |
+| `NEXT_PUBLIC_TON_APP_NAME` | Public identifier shown in TON Connect. |
+| `VERCEL_ENV` | Optional deployment stage flag for logging. |
 
 ### Frontend
 Deploy to any static hosting:
@@ -214,52 +215,18 @@ MongoDB is accessed directly via the built-in Vite middleware. Ensure `MONGODB_U
 
 ---
 
-## 📝 Configuration
+## 🚀 Deployment (Vercel)
+1. Push your branch to GitHub.
+2. Ensure the Vercel project is connected to the GitHub repository.
+3. In Vercel dashboard, add the required environment variables (`MONGODB_URI`, `TON_API_KEY`, `NEXT_PUBLIC_TON_APP_NAME`, `VERCEL_ENV`).
+4. Trigger a deployment (Vercel automatically deploys each push).
+5. Verify the preview build, then promote to production when ready.
 
-### Economy Settings
-Edit `/config/economy.ts`:
+---
 
-```typescript
-export const TON_TO_ENERGY_RATE = 100000;
-export const DAILY_VIEW_LIMIT = 200;
-export const AD_COOLDOWN_SECONDS = 30;
+## 🔁 Workflow
 ```
-
-### Partner Rewards ⭐ NEW
-Edit `/config/partners.ts` to add partner channels:
-
-```typescript
-{
-  id: 'telegram_your_channel',
-  platform: 'telegram',        // telegram | x | youtube | instagram | discord
-  name: 'Your Channel',
-  url: 'https://t.me/channel',
-  reward: 750,                 // Coins (500-1000 recommended)
-  active: true,
-}
-```
-
-**Full Guide**: [REWARDS_GUIDE.md](./REWARDS_GUIDE.md)
-
-### Partner Ads
-Edit `/config/ads.ts` to add video/image ads:
-
-```typescript
-{
-  id: 'your_ad',
-  type: 'video',              // or 'image'
-  url: 'https://cdn.com/ad.mp4',
-  partnerUrl: 'https://partner.com',
-  partnerName: 'Partner',
-}
-```
-
-### Boost Levels
-```typescript
-export const BOOSTS = [
-  { level: 1, name: "Bronze", multiplier: 1.25, costTon: 0.5, durationDays: 7 },
-  // Add more...
-];
+Codex → GitHub → Vercel
 ```
 
 ### Theme Colors
@@ -324,6 +291,11 @@ Edit `/styles/globals.css` to change brand colors.
 ---
 
 ## 🤝 Contributing
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/amazing-feature`).
+3. Commit changes (`git commit -m "feat: add amazing feature"`).
+4. Push the branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request with summary + testing notes.
 
 Contributions are welcome! Please:
 
@@ -407,6 +379,6 @@ Cladhunter aims to:
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: October 19, 2025  
+**Version**: 1.1.0  
+**Last Updated**: October 22, 2025  
 **Status**: Production Ready (Demo Mode)
