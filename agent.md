@@ -4,7 +4,6 @@
 - **Frontend:** React 18 + TypeScript, Tailwind, Motion, Recharts.
 - **API Layer:** Vite dev middleware (`server/routes.ts`) exposing REST endpoints under `/api/*`.
 - **Database:** MongoDB accessed via Mongoose models in `server/models/*` with business logic in `server/services/userService.ts`.
-- **Testing Helpers:** `utils/test-api.ts` attaches `window.testApi` for manual API calls in development.
 
 ```
 React Components / Hooks
@@ -28,7 +27,6 @@ MongoDB (MONGOBASE_MONGODB_URI env)
 - Server code runs in Node context only. Do **not** import `server/*` files into client bundles.
 - API endpoints expect JSON bodies; handle errors by checking `{ error }` fields returned from middleware.
 - Keep shared config (`config/economy.ts`, `config/partners.ts`) in sync with server logic.
-- `window.testApi` is included by default for dev. Strip it from production builds if necessary.
 
 ## ✅ Sample Operations
 - **Create user:** `await createUser({ userId: 'demo_1' })`
