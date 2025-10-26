@@ -4,10 +4,13 @@ import {
   completeAdWatch,
   confirmOrder,
   createOrder,
+  getPaymentStatus,
   getRewardStatus,
   getUserBalance,
   getUserStats,
   initUser,
+  registerTonPayment,
+  retryPayment,
 } from '../utils/api/sqlClient';
 
 interface RpcCall {
@@ -36,6 +39,8 @@ function buildResponse(fn: string): any {
       return { order_id: 'order-1', address: 'TON', amount: 1.2, payload: 'payload', boost_name: 'Silver', duration_days: 14 };
     case 'app_confirm_order':
       return { success: true, boost_level: 2, boost_expires_at: '2025-01-01T00:00:00.000Z', multiplier: 1.5 };
+    case 'app_register_ton_payment':
+      return { success: true, order_id: 'order-1', status: 'pending_verification' };
     case 'app_get_stats':
       return {
         totals: {
@@ -55,6 +60,26 @@ function buildResponse(fn: string): any {
       return { claimed_partners: ['partner_1'], available_rewards: 0 };
     case 'app_claim_reward':
       return { success: true, reward: 20, new_balance: 70, partner_name: 'Partner' };
+    case 'app_retry_ton_payment':
+      return { success: true, status: 'pending_verification', verification_attempts: 1, last_payment_check: '2025-01-01T00:00:00.000Z' };
+    case 'app_get_payment_status':
+      return {
+        order_id: 'order-1',
+        status: 'awaiting_webhook',
+        paid_at: null,
+        tx_hash: 'hash',
+        tx_lt: '123',
+        verification_attempts: 2,
+        verification_error: null,
+        last_payment_check: '2025-01-01T00:00:00.000Z',
+        last_event: {
+          id: 1,
+          status: 'confirmed',
+          received_at: '2025-01-01T00:00:00.000Z',
+          wallet: 'wallet',
+          amount: 1.2,
+        },
+      };
     default:
       return {};
   }
@@ -109,6 +134,44 @@ describe('sqlClient RPC wrappers', () => {
     expect(rpcCalls[0]).toEqual({
       fn: 'app_confirm_order',
       params: { p_user_id: 'anon_1', p_order_id: 'order-1', p_tx_hash: 'hash' },
+    });
+  });
+
+  it('registers and inspects TON payment workflow', async () => {
+    const registration = await registerTonPayment({
+      orderId: 'order-1',
+      wallet: 'wallet',
+      amount: 1.2,
+      boc: 'raw_boc',
+    });
+
+    expect(registration.status).toBe('pending_verification');
+    expect(rpcCalls[0]).toEqual({
+      fn: 'app_register_ton_payment',
+      params: {
+        p_order_id: 'order-1',
+        p_wallet: 'wallet',
+        p_amount: 1.2,
+        p_boc: 'raw_boc',
+        p_status: null,
+      },
+    });
+
+    rpcCalls.length = 0;
+    const retry = await retryPayment({ userId: 'anon_1', orderId: 'order-1' });
+    expect(retry.success).toBe(true);
+    expect(rpcCalls[0]).toEqual({
+      fn: 'app_retry_ton_payment',
+      params: { p_user_id: 'anon_1', p_order_id: 'order-1' },
+    });
+
+    rpcCalls.length = 0;
+    const status = await getPaymentStatus({ userId: 'anon_1', orderId: 'order-1' });
+    expect(status.tx_hash).toBe('hash');
+    expect(status.last_event?.status).toBe('confirmed');
+    expect(rpcCalls[0]).toEqual({
+      fn: 'app_get_payment_status',
+      params: { p_user_id: 'anon_1', p_order_id: 'order-1' },
     });
   });
 
