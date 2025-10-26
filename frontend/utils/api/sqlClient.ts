@@ -65,9 +65,9 @@ export interface WalletProofFinishRequest {
 
 export interface WalletProofFinishResponse {
   success: boolean;
-  address: string;
-  userId?: string;
-  accessToken?: string;
+  wallet: string;
+  userId: string;
+  accessToken: string;
 }
 
 export async function finishWalletProof(
@@ -80,6 +80,7 @@ export interface InitUserInput {
   userId: string;
   walletAddress?: string | null;
   countryCode?: string | null;
+  accessToken: string;
 }
 
 export async function initUser(body: InitUserInput): Promise<{ user: {
@@ -94,6 +95,7 @@ export async function initUser(body: InitUserInput): Promise<{ user: {
 
 export interface BalanceInput {
   userId: string;
+  accessToken: string;
 }
 
 export async function getUserBalance(body: BalanceInput): Promise<{
@@ -108,6 +110,7 @@ export async function getUserBalance(body: BalanceInput): Promise<{
 export interface CompleteAdInput {
   userId: string;
   adId: string;
+  accessToken: string;
 }
 
 export async function completeAdWatch(body: CompleteAdInput): Promise<AdCompleteResponse> {
@@ -117,6 +120,7 @@ export async function completeAdWatch(body: CompleteAdInput): Promise<AdComplete
 export interface CreateOrderInput {
   userId: string;
   boostLevel: number;
+  accessToken: string;
 }
 
 export async function createOrder(body: CreateOrderInput): Promise<{
@@ -134,6 +138,7 @@ export interface ConfirmOrderInput {
   userId: string;
   orderId: string;
   txHash?: string | null;
+  accessToken: string;
 }
 
 export async function confirmOrder(body: ConfirmOrderInput): Promise<{
@@ -151,6 +156,7 @@ export interface RegisterTonPaymentInput {
   amount: number;
   boc: string;
   status?: string;
+  accessToken: string;
 }
 
 export async function registerTonPayment(body: RegisterTonPaymentInput): Promise<{
@@ -164,6 +170,7 @@ export async function registerTonPayment(body: RegisterTonPaymentInput): Promise
 export interface RetryPaymentInput {
   userId: string;
   orderId: string;
+  accessToken: string;
 }
 
 export async function retryPayment(body: RetryPaymentInput): Promise<RetryPaymentResponse> {
@@ -173,6 +180,7 @@ export async function retryPayment(body: RetryPaymentInput): Promise<RetryPaymen
 export interface PaymentStatusInput {
   userId: string;
   orderId: string;
+  accessToken: string;
 }
 
 export async function getPaymentStatus(body: PaymentStatusInput): Promise<PaymentStatusResponse> {
@@ -181,6 +189,7 @@ export async function getPaymentStatus(body: PaymentStatusInput): Promise<Paymen
 
 export interface StatsInput {
   userId: string;
+  accessToken: string;
 }
 
 export async function getUserStats(body: StatsInput): Promise<UserStatsResponse> {
@@ -189,6 +198,7 @@ export async function getUserStats(body: StatsInput): Promise<UserStatsResponse>
 
 export interface RewardStatusInput {
   userId: string;
+  accessToken: string;
 }
 
 export async function getRewardStatus(body: RewardStatusInput): Promise<RewardStatusResponse> {
@@ -198,6 +208,7 @@ export async function getRewardStatus(body: RewardStatusInput): Promise<RewardSt
 export interface ClaimRewardInput {
   userId: string;
   partnerId: string;
+  accessToken: string;
 }
 
 export async function claimReward(body: ClaimRewardInput): Promise<ClaimRewardResponse> {
@@ -208,6 +219,7 @@ export interface LedgerHistoryRequest {
   userId: string;
   page?: number;
   limit?: number;
+  accessToken: string;
 }
 
 export interface LedgerHistoryEntry {

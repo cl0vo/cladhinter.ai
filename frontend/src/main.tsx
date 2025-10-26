@@ -6,18 +6,42 @@ import { TonConnectUIProvider } from '@tonconnect/ui-react';
 import App from '../App';
 import '../styles/globals.css';
 
+const FALLBACK_MANIFEST_PATH = '/tonconnect-manifest.json';
+
 const resolveFallbackManifestUrl = () => {
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return `${window.location.origin}/tonconnect-manifest.json`;
+    return `${window.location.origin}${FALLBACK_MANIFEST_PATH}`;
   }
 
-  return '/tonconnect-manifest.json';
+  return FALLBACK_MANIFEST_PATH;
 };
 
-const manifestUrl =
-  import.meta.env.VITE_TON_MANIFEST ||
-  import.meta.env.VITE_TON_MANIFEST_URL ||
-  resolveFallbackManifestUrl();
+const resolveManifestUrl = (rawValue?: string | null) => {
+  const fallback = resolveFallbackManifestUrl();
+  const trimmed = rawValue?.trim();
+
+  if (!trimmed) {
+    return fallback;
+  }
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      return new URL(trimmed, window.location.origin).toString();
+    } catch (error) {
+      // fall through to try without base origin
+    }
+  }
+
+  try {
+    return new URL(trimmed).toString();
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const manifestUrl = resolveManifestUrl(
+  import.meta.env.VITE_TON_MANIFEST || import.meta.env.VITE_TON_MANIFEST_URL,
+);
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { getSecureRandomBytes, sha256 } from '@ton/crypto';
 import {
@@ -23,13 +23,21 @@ import {
 import nacl from 'tweetnacl';
 
 import { query } from '../postgres';
+import { UnauthorizedError } from '../errors';
 
 const TON_PROOF_PREFIX = 'ton-proof-item-v2/';
 const TON_CONNECT_PREFIX = 'ton-connect';
 
-const DEFAULT_ALLOWED_DOMAINS = ['localhost:5173', 'ton-connect.github.io'];
+const DEFAULT_ALLOWED_DOMAINS = [
+  'localhost:5173',
+  '127.0.0.1:5173',
+  'localhost:4173',
+  '127.0.0.1:4173',
+  'ton-connect.github.io',
+];
 const DEFAULT_TON_ENDPOINT = 'https://mainnet-v4.tonhubapi.com';
 const DEV_FALLBACK_HMAC_SECRET = 'insecure-dev-wallet-proof-secret';
+const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24; // 24 hours
 
 interface TonProofDomain {
   lengthBytes: number;
@@ -94,6 +102,13 @@ export interface WalletProofFinishResult {
   success: true;
   userId: string;
   wallet: string;
+  accessToken: string;
+}
+
+export interface AccessTokenPayload {
+  userId: string;
+  wallet: string;
+  exp: number;
 }
 
 let tonClient: TonClient4 | null = null;
@@ -133,10 +148,85 @@ function getTtlSeconds(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 15 * 60;
 }
 
+function getAccessTokenTtlSeconds(): number {
+  const raw = process.env.ACCESS_TOKEN_TTL_SECONDS;
+  const parsed = raw ? Number.parseInt(raw, 10) : DEFAULT_ACCESS_TOKEN_TTL_SECONDS;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ACCESS_TOKEN_TTL_SECONDS;
+}
+
+function parseDomainCandidate(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const candidates = [trimmed];
+
+  if (!/^\w+:\/\//.test(trimmed)) {
+    candidates.push(`https://${trimmed}`);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const url = new URL(candidate);
+      if (url.host) {
+        return url.host;
+      }
+    } catch (error) {
+      continue;
+    }
+  }
+
+  const host = trimmed.split('/')[0];
+  return /^[a-zA-Z0-9.-]+(?::\d+)?$/.test(host) ? host : null;
+}
+
 function getAllowedDomains(): string[] {
   const value = process.env.TON_PROOF_ALLOWED_DOMAINS;
   if (!value) {
-    return DEFAULT_ALLOWED_DOMAINS;
+    const domains = new Set(DEFAULT_ALLOWED_DOMAINS);
+
+    const manifestCandidates = [
+      process.env.TON_MANIFEST_URL,
+      process.env.TON_MANIFEST,
+      process.env.PUBLIC_TON_MANIFEST_URL,
+      process.env.PUBLIC_TONCONNECT_MANIFEST_URL,
+      process.env.VITE_TON_MANIFEST,
+      process.env.VITE_TON_MANIFEST_URL,
+      process.env.NEXT_PUBLIC_TON_MANIFEST_URL,
+    ];
+
+    for (const candidate of manifestCandidates) {
+      const parsed = parseDomainCandidate(candidate);
+      if (parsed) {
+        domains.add(parsed);
+      }
+    }
+
+    const deploymentCandidates = [
+      process.env.APP_URL,
+      process.env.PUBLIC_APP_URL,
+      process.env.NEXT_PUBLIC_APP_URL,
+    ];
+
+    for (const candidate of deploymentCandidates) {
+      const parsed = parseDomainCandidate(candidate);
+      if (parsed) {
+        domains.add(parsed);
+      }
+    }
+
+    const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+    const parsedVercel = parseDomainCandidate(vercelUrl);
+    if (parsedVercel) {
+      domains.add(parsedVercel);
+    }
+
+    return Array.from(domains);
   }
   return value
     .split(',')
@@ -148,6 +238,81 @@ function hashNonce(nonce: string): string {
   const hmac = createHmac('sha256', getHmacSecret());
   hmac.update(nonce);
   return hmac.digest('base64url');
+}
+
+function encodeAccessTokenPayload(payload: AccessTokenPayload): string {
+  const json = JSON.stringify(payload);
+  return Buffer.from(json).toString('base64url');
+}
+
+function signAccessTokenSegment(segment: string): string {
+  const hmac = createHmac('sha256', getHmacSecret());
+  hmac.update(segment);
+  return hmac.digest('base64url');
+}
+
+export function createAccessToken(userId: string, wallet: string): string {
+  const payload: AccessTokenPayload = {
+    userId,
+    wallet,
+    exp: Math.floor(Date.now() / 1000) + getAccessTokenTtlSeconds(),
+  };
+
+  const encoded = encodeAccessTokenPayload(payload);
+  const signature = signAccessTokenSegment(encoded);
+  return `${encoded}.${signature}`;
+}
+
+export function verifyAccessToken(
+  token: string | null | undefined,
+  expected: { userId?: string; wallet?: string } = {},
+): AccessTokenPayload {
+  if (!token || typeof token !== 'string') {
+    throw new UnauthorizedError('Missing access token');
+  }
+
+  const [encodedPayload, providedSignature, ...rest] = token.split('.');
+  if (!encodedPayload || !providedSignature || rest.length > 0) {
+    throw new UnauthorizedError('Invalid access token');
+  }
+
+  let payload: AccessTokenPayload;
+  try {
+    const json = Buffer.from(encodedPayload, 'base64url').toString('utf8');
+    payload = JSON.parse(json) as AccessTokenPayload;
+  } catch (error) {
+    throw new UnauthorizedError('Invalid access token');
+  }
+
+  const expectedSignature = signAccessTokenSegment(encodedPayload);
+  const providedBuffer = Buffer.from(providedSignature, 'base64url');
+  const expectedBuffer = Buffer.from(expectedSignature, 'base64url');
+
+  if (
+    providedBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(providedBuffer, expectedBuffer)
+  ) {
+    throw new UnauthorizedError('Invalid access token');
+  }
+
+  if (!payload?.userId || !payload?.wallet || typeof payload.exp !== 'number') {
+    throw new UnauthorizedError('Invalid access token');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp <= now) {
+    throw new UnauthorizedError('Access token expired');
+  }
+
+  if (expected.userId && expected.userId !== payload.userId) {
+    throw new UnauthorizedError('Access token user mismatch');
+  }
+
+  if (expected.wallet && expected.wallet !== payload.wallet) {
+    throw new UnauthorizedError('Access token wallet mismatch');
+  }
+
+  return payload;
 }
 
 async function fetchWalletSession(nonceHash: string): Promise<WalletSessionRow | null> {
@@ -406,10 +571,13 @@ export async function finishWalletProofSession(input: WalletProofFinishInput): P
 
   const userRow = await upsertWalletUser(userId, wallet);
 
+  const accessToken = createAccessToken(userRow.id, wallet);
+
   return {
     success: true,
     userId: userRow.id,
     wallet: userRow.wallet ?? wallet,
+    accessToken,
   };
 }
 

@@ -8,6 +8,8 @@ import {
   type ConfirmOrderInput,
   createOrder,
   type CreateOrderInput,
+  getLedgerHistory,
+  type LedgerHistoryRequest,
   getPaymentStatus,
   type PaymentStatusInput,
   getRewardStatus,
@@ -23,8 +25,10 @@ import {
   retryPayment,
   type RetryPaymentInput,
 } from '../utils/api/sqlClient';
+import { useAuth } from './useAuth';
 
 export function useApi() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,21 +49,50 @@ export function useApi() {
     }
   }, []);
 
-  const api = useMemo(() => ({
-    initUser: (input: InitUserInput) => execute(() => initUser(input)),
-    getUserBalance: (input: BalanceInput) => execute(() => getUserBalance(input)),
-    completeAdWatch: (input: CompleteAdInput) => execute(() => completeAdWatch(input)),
-    createOrder: (input: CreateOrderInput) => execute(() => createOrder(input)),
-    confirmOrder: (input: ConfirmOrderInput) => execute(() => confirmOrder(input)),
-    registerTonPayment: (input: RegisterTonPaymentInput) =>
-      execute(() => registerTonPayment(input)),
-    getPaymentStatus: (input: PaymentStatusInput) => execute(() => getPaymentStatus(input)),
-    retryPayment: (input: RetryPaymentInput) => execute(() => retryPayment(input)),
-    getUserStats: (input: StatsInput) => execute(() => getUserStats(input)),
-    getRewardStatus: (input: RewardStatusInput) => execute(() => getRewardStatus(input)),
-    claimReward: (input: ClaimRewardInput) => execute(() => claimReward(input)),
-    getLedgerHistory: (input: LedgerHistoryRequest) => execute(() => getLedgerHistory(input)),
-  }), [execute]);
+  const withAccessToken = useCallback(
+    <T extends { accessToken: string }>(input: Omit<T, 'accessToken'>): T => {
+      const accessToken = user?.accessToken;
+      if (!accessToken) {
+        throw new Error('Wallet authorization required');
+      }
+
+      return {
+        ...input,
+        accessToken,
+      } as T;
+    },
+    [user?.accessToken],
+  );
+
+  const api = useMemo(
+    () => ({
+      initUser: (input: Omit<InitUserInput, 'accessToken'>) =>
+        execute(() => initUser(withAccessToken<InitUserInput>(input))),
+      getUserBalance: (input: Omit<BalanceInput, 'accessToken'>) =>
+        execute(() => getUserBalance(withAccessToken<BalanceInput>(input))),
+      completeAdWatch: (input: Omit<CompleteAdInput, 'accessToken'>) =>
+        execute(() => completeAdWatch(withAccessToken<CompleteAdInput>(input))),
+      createOrder: (input: Omit<CreateOrderInput, 'accessToken'>) =>
+        execute(() => createOrder(withAccessToken<CreateOrderInput>(input))),
+      confirmOrder: (input: Omit<ConfirmOrderInput, 'accessToken'>) =>
+        execute(() => confirmOrder(withAccessToken<ConfirmOrderInput>(input))),
+      registerTonPayment: (input: Omit<RegisterTonPaymentInput, 'accessToken'>) =>
+        execute(() => registerTonPayment(withAccessToken<RegisterTonPaymentInput>(input))),
+      getPaymentStatus: (input: Omit<PaymentStatusInput, 'accessToken'>) =>
+        execute(() => getPaymentStatus(withAccessToken<PaymentStatusInput>(input))),
+      retryPayment: (input: Omit<RetryPaymentInput, 'accessToken'>) =>
+        execute(() => retryPayment(withAccessToken<RetryPaymentInput>(input))),
+      getUserStats: (input: Omit<StatsInput, 'accessToken'>) =>
+        execute(() => getUserStats(withAccessToken<StatsInput>(input))),
+      getRewardStatus: (input: Omit<RewardStatusInput, 'accessToken'>) =>
+        execute(() => getRewardStatus(withAccessToken<RewardStatusInput>(input))),
+      claimReward: (input: Omit<ClaimRewardInput, 'accessToken'>) =>
+        execute(() => claimReward(withAccessToken<ClaimRewardInput>(input))),
+      getLedgerHistory: (input: Omit<LedgerHistoryRequest, 'accessToken'>) =>
+        execute(() => getLedgerHistory(withAccessToken<LedgerHistoryRequest>(input))),
+    }),
+    [execute, withAccessToken],
+  );
 
   return {
     ...api,

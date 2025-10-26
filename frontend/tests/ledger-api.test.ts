@@ -83,6 +83,7 @@ describe('ledger entries', () => {
       body: JSON.stringify({
         userId: 'user-ledger',
         adId: 'demo_video_1',
+        accessToken: 'test-token',
       }),
     });
 
@@ -92,6 +93,10 @@ describe('ledger entries', () => {
     expect(body.success).toBe(true);
 
     expect(ensureDatabaseMock).toHaveBeenCalled();
-    expect(completeAdWatchMock).toHaveBeenCalledWith({ userId: 'user-ledger', adId: 'demo_video_1' });
+    expect(completeAdWatchMock).toHaveBeenCalledWith({
+      userId: 'user-ledger',
+      adId: 'demo_video_1',
+      accessToken: 'test-token',
+    });
   });
 });

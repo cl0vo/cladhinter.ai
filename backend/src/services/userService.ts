@@ -4,6 +4,7 @@ import { BOOSTS, DAILY_VIEW_LIMIT, ENERGY_PER_AD, boostMultiplier } from '../../
 import { adCreatives } from '../../../shared/config/ads';
 import { getActivePartners, getPartnerById } from '../../../shared/config/partners';
 import { getExecutor, query, withTransaction, type SqlExecutor } from '../postgres';
+import { verifyAccessToken } from './walletProofService';
 
 export type OrderStatus =
   | 'pending'
@@ -228,11 +229,15 @@ export async function initUser({
   userId,
   walletAddress,
   countryCode,
+  accessToken,
 }: {
   userId: string;
   walletAddress?: string | null;
   countryCode?: string | null;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   return withTransaction(async (client) => {
     const now = new Date();
     const wallet = walletAddress ?? null;
@@ -288,9 +293,13 @@ export async function initUser({
 
 export async function getUserBalance({
   userId,
+  accessToken,
 }: {
   userId: string;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
   const user = userResult.rows[0] ? mapUserRow(userResult.rows[0]) : null;
   ensureEntityExists(user, `User ${userId}`);
@@ -306,10 +315,14 @@ export async function getUserBalance({
 export async function completeAdWatch({
   userId,
   adId,
+  accessToken,
 }: {
   userId: string;
   adId: string;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   return withTransaction(async (client) => {
     let user = await fetchUserById(client, userId, { forUpdate: true });
     ensureEntityExists(user, `User ${userId}`);
@@ -397,10 +410,14 @@ const DEFAULT_MERCHANT = 'UQDw8GgIlOX7SqLJKkpIB2JaOlU5n0g2qGifwtneUb1VMnVt';
 export async function createOrder({
   userId,
   boostLevel,
+  accessToken,
 }: {
   userId: string;
   boostLevel: number;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   return withTransaction(async (client) => {
     const user = await fetchUserById(client, userId, { forUpdate: true });
     ensureEntityExists(user, `User ${userId}`);
@@ -433,11 +450,15 @@ export async function confirmOrder({
   userId,
   orderId,
   txHash,
+  accessToken,
 }: {
   userId: string;
   orderId: string;
   txHash?: string | null;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   return withTransaction(async (client) => {
     const order = await fetchOrderById(client, orderId, { forUpdate: true });
     ensureEntityExists(order, `Order ${orderId}`);
@@ -511,16 +532,20 @@ export async function registerTonPayment({
   amount,
   boc,
   status,
+  accessToken,
 }: {
   orderId: string;
   wallet: string;
   amount: number;
   boc: string;
   status?: OrderStatus;
+  accessToken: string;
 }) {
   return withTransaction(async (client) => {
     const order = await fetchOrderById(client, orderId, { forUpdate: true });
     ensureEntityExists(order, `Order ${orderId}`);
+
+    verifyAccessToken(accessToken, { userId: order.user_id });
 
     const verificationAttempts = order.verification_attempts + 1;
     const now = new Date();
@@ -576,10 +601,14 @@ export async function registerTonPayment({
 export async function retryPayment({
   userId,
   orderId,
+  accessToken,
 }: {
   userId: string;
   orderId: string;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   return withTransaction(async (client) => {
     const order = await fetchOrderById(client, orderId, { forUpdate: true });
     ensureEntityExists(order, `Order ${orderId}`);
@@ -612,10 +641,14 @@ export async function retryPayment({
 export async function getPaymentStatus({
   userId,
   orderId,
+  accessToken,
 }: {
   userId: string;
   orderId: string;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   const orderResult = await query<OrderRow>('SELECT * FROM orders WHERE id = $1', [orderId]);
   const order = orderResult.rows[0];
   ensureEntityExists(order, `Order ${orderId}`);
@@ -649,9 +682,13 @@ export async function getPaymentStatus({
 
 export async function getUserStats({
   userId,
+  accessToken,
 }: {
   userId: string;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
   const userRow = userResult.rows[0];
   const user = userRow ? mapUserRow(userRow) : null;
@@ -693,7 +730,7 @@ export async function getUserStats({
       expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
     },
     country_code: user.countryCode ?? null,
-    watch_history: watchHistoryResult.rows.map((item) => ({
+    watch_history: watchHistoryResult.rows.map((item: WatchLogRow) => ({
       id: item.id,
       user_id: userId,
       ad_id: item.ad_id,
@@ -703,7 +740,7 @@ export async function getUserStats({
       created_at: new Date(item.created_at).toISOString(),
       country_code: item.country_code ?? null,
     })),
-    session_history: sessionsResult.rows.map((session) => ({
+    session_history: sessionsResult.rows.map((session: SessionLogRow) => ({
       id: session.id,
       user_id: userId,
       country_code: session.country_code ?? null,
@@ -715,9 +752,12 @@ export async function getUserStats({
 
 export async function getRewardStatus({
   userId,
+  accessToken,
 }: {
   userId: string;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
   const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
   const user = userResult.rows[0] ? mapUserRow(userResult.rows[0]) : null;
   ensureEntityExists(user, `User ${userId}`);
@@ -734,10 +774,14 @@ export async function getRewardStatus({
 export async function claimReward({
   userId,
   partnerId,
+  accessToken,
 }: {
   userId: string;
   partnerId: string;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   const partner = getPartnerById(partnerId);
 
   if (!partner || !partner.active) {
@@ -805,11 +849,15 @@ export async function getLedgerHistory({
   userId,
   page = 1,
   limit = 20,
+  accessToken,
 }: {
   userId: string;
   page?: number;
   limit?: number;
+  accessToken: string;
 }) {
+  verifyAccessToken(accessToken, { userId });
+
   const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
   const user = userResult.rows[0] ? mapUserRow(userResult.rows[0]) : null;
   ensureEntityExists(user, `User ${userId}`);
@@ -832,7 +880,7 @@ export async function getLedgerHistory({
   const entries = entriesResult.rows;
 
   return {
-    entries: entries.map((entry) => ({
+    entries: entries.map((entry: LedgerRow) => ({
       id: entry.id,
       user_id: entry.user_id,
       wallet: entry.wallet,
