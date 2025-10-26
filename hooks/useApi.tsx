@@ -8,6 +8,8 @@ import {
   type ConfirmOrderInput,
   createOrder,
   type CreateOrderInput,
+  getPaymentStatus,
+  type PaymentStatusInput,
   getRewardStatus,
   type RewardStatusInput,
   getUserBalance,
@@ -16,6 +18,10 @@ import {
   type StatsInput,
   initUser,
   type InitUserInput,
+  registerTonPayment,
+  type RegisterTonPaymentInput,
+  retryPayment,
+  type RetryPaymentInput,
 } from '../utils/api/sqlClient';
 
 export function useApi() {
@@ -45,6 +51,10 @@ export function useApi() {
     completeAdWatch: (input: CompleteAdInput) => execute(() => completeAdWatch(input)),
     createOrder: (input: CreateOrderInput) => execute(() => createOrder(input)),
     confirmOrder: (input: ConfirmOrderInput) => execute(() => confirmOrder(input)),
+    registerTonPayment: (input: RegisterTonPaymentInput) =>
+      execute(() => registerTonPayment(input)),
+    getPaymentStatus: (input: PaymentStatusInput) => execute(() => getPaymentStatus(input)),
+    retryPayment: (input: RetryPaymentInput) => execute(() => retryPayment(input)),
     getUserStats: (input: StatsInput) => execute(() => getUserStats(input)),
     getRewardStatus: (input: RewardStatusInput) => execute(() => getRewardStatus(input)),
     claimReward: (input: ClaimRewardInput) => execute(() => claimReward(input)),

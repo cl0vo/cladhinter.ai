@@ -199,6 +199,22 @@ Use the REST endpoints exposed under `/api/*` with your preferred HTTP client (e
 
 The app runs on [http://localhost:5173](http://localhost:5173) by default.
 
+#### TON Payment Verification Smoke Test
+Use this checklist to cover the new TON payment registration flow without automated tests:
+
+1. Start the dev server with `npm run dev` and open the wallet screen in the browser.
+2. Connect a TON wallet through the TonConnect modal (the sandbox wallet extension works for local testing).
+3. Purchase any premium boost:
+   - Ensure the wallet sends a transaction (test network transfers are sufficient).
+   - Confirm that a "Pending Payment" card appears with the retry button enabled.
+4. After TonConnect returns a BOC, verify that the "Payment Status" card appears:
+   - The status should start as `PENDING_VERIFICATION`.
+   - Use the **Refresh** action to poll `/api/orders/status`.
+   - Trigger **Retry Verification** and confirm that a success toast is shown.
+5. Once the backend marks the order as paid (or you manually confirm it from the Pending Payment card), refresh again and confirm that the status advances to `PAID` and the user balance updates.
+
+> **Tip:** In environments without a live TON node, you can simulate the final webhook by calling `/api/orders/confirm` manually (e.g., via REST client) after registering the payment to validate the UI states.
+
 ---
 
 ## 🛠️ Local Development
