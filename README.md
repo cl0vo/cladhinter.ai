@@ -104,7 +104,7 @@ Blockchain (TON - Future Integration)
 - **Tailwind CSS** - Styling
 - **Motion** - Animations
 - **Recharts** - Data visualization
-- **Shadcn/ui** - Component library
+- **Radix Slot** - Polymorphic primitive for shared button
 
 ### Backend
 - **Node (Vite middleware)** - Lightweight API layer
