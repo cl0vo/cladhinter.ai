@@ -27,8 +27,14 @@ export function useAuth() {
     }
 
     if (wallet) {
+      if (!wallet.accessToken) {
+        console.warn('Wallet connection missing access token');
+        setLoading(true);
+        return;
+      }
+
       const authId = wallet.userId ?? createAuthUserId(wallet.rawAddress || wallet.address);
-      const accessToken = wallet.accessToken ?? '';
+      const accessToken = wallet.accessToken;
 
       setUser((prevUser) => {
         if (
