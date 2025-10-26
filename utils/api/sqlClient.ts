@@ -3,7 +3,9 @@ import { createClient } from '../supabase/client';
 import type {
   AdCompleteResponse,
   ClaimRewardResponse,
+  PaymentStatusResponse,
   RewardStatusResponse,
+  RetryPaymentResponse,
   UserStatsResponse,
 } from '../../types';
 import type { UserData } from '../../hooks/useUserData';
@@ -125,6 +127,28 @@ export async function confirmOrder(
   }, context);
 }
 
+export interface RegisterTonPaymentInput {
+  orderId: string;
+  wallet: string;
+  amount: number;
+  boc: string;
+  status?: string;
+}
+
+export async function registerTonPayment(
+  { orderId, wallet, amount, boc, status }: RegisterTonPaymentInput,
+  context?: RpcContext,
+): Promise<{ success: boolean; order_id: string; status: string }>
+{
+  return callRpc('app_register_ton_payment', {
+    p_order_id: orderId,
+    p_wallet: wallet,
+    p_amount: amount,
+    p_boc: boc,
+    p_status: status ?? null,
+  }, context);
+}
+
 export interface StatsInput {
   userId: string;
 }
@@ -170,5 +194,37 @@ export async function claimReward(
     p_partner_id: partnerId,
     p_reward: rewardAmount,
     p_partner_name: partnerName,
+  }, context);
+}
+
+export interface RetryPaymentInput {
+  userId: string;
+  orderId: string;
+}
+
+export async function retryPayment(
+  { userId, orderId }: RetryPaymentInput,
+  context?: RpcContext,
+): Promise<RetryPaymentResponse>
+{
+  return callRpc('app_retry_ton_payment', {
+    p_user_id: userId,
+    p_order_id: orderId,
+  }, context);
+}
+
+export interface PaymentStatusInput {
+  userId: string;
+  orderId: string;
+}
+
+export async function getPaymentStatus(
+  { userId, orderId }: PaymentStatusInput,
+  context?: RpcContext,
+): Promise<PaymentStatusResponse>
+{
+  return callRpc('app_get_payment_status', {
+    p_user_id: userId,
+    p_order_id: orderId,
   }, context);
 }
