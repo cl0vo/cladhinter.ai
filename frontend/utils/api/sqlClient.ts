@@ -7,7 +7,22 @@ import type {
   UserStatsResponse,
 } from '../../types';
 
-const API_BASE = '/api';
+const backendUrl = import.meta.env.VITE_BACKEND_URL?.trim();
+
+function resolveApiBase(): string {
+  if (!backendUrl) {
+    return '/api';
+  }
+
+  const normalized = backendUrl.replace(/\/+$, '');
+  if (normalized.toLowerCase().endsWith('/api')) {
+    return normalized;
+  }
+
+  return `${normalized}/api`;
+}
+
+const API_BASE = resolveApiBase();
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
