@@ -76,9 +76,9 @@ Postgres Storage (app_* tables)
   useTonConnect.tsx # TON wallet integration
   useUserData.tsx  # User data management
 
-/supabase/functions/server/
-  index.tsx        # Main server with all API endpoints
-  kv_store.tsx     # KV database wrapper (PROTECTED)
+/supabase/migrations
+  *.sql            # Database schema & RPC definitions (authoritative)
+  README           # Supabase CLI metadata (if present)
 
 /utils              # Utility functions
   /supabase        # Supabase client & config
@@ -93,65 +93,57 @@ Postgres Storage (app_* tables)
 
 ## 🗄️ Database Structure
 
-### KV Store Keys Pattern
+### Core Tables
 
-```typescript
-// Users
-user:${userId}              → User object (JSON)
+| Table | Purpose |
+|-------|---------|
+| `app_users` | Primary user profile (energy, boosts, metadata) |
+| `ad_watch_logs` | Immutable history of rewarded ad watches (UUID primary key) |
+| `ad_watch_counts` | Daily aggregate counts per user (used for limits) |
+| `user_sessions` | Rolling session activity (updated by watch + auth flows) |
+| `app_orders` | TON boost purchases |
+| `partner_reward_claims` / `partner_reward_logs` | Partner reward tracking |
 
-// Sessions (NEW)
-session:${userId}:${timestamp}         → Session tracking (JSON)
+### Watch Log Schema
 
-// Ad watching
-watch:${userId}:${timestamp}           → Watch log (JSON)
-watch_count:${userId}:${date}          → Daily watch count (string number)
-
-// Orders
-order:${orderId}            → Order object (JSON)
-
-// Rewards
-reward_claim:${userId}:${partnerId}    → Claim record (JSON)
-reward_log:${userId}:${timestamp}      → Reward log (JSON)
+```sql
+column         | type            | notes
+---------------+-----------------+------------------------------
+id             | uuid            | Generated via gen_random_uuid()
+user_id        | text            | FK → app_users.id
+ad_id          | text            | Provider ad identifier
+reward         | integer         | Effective reward credited
+base_reward    | integer         | Base reward before multipliers
+multiplier     | numeric(6,2)    | Applied multiplier at watch time
+country_code   | text            | ISO country inferred from session
+created_at     | timestamptz     | UTC timestamp of the watch
 ```
 
-### User Object Schema
-```typescript
-interface User {
-  id: string;                    // User ID or anon_*
-  energy: number;                // Current balance (🆑)
-  boost_level: number;           // 0-4 boost level
-  last_watch_at: string | null;  // ISO timestamp
-  boost_expires_at: string | null; // ISO timestamp
-  created_at: string;            // ISO timestamp
-}
-```
+### Analytics View
+
+`ad_watch_daily_analytics` aggregates `ad_watch_logs` per `user_id` + day to power dashboards (watch_count, total_reward, avg_multiplier, first/last timestamps).
 
 ---
 
 ## 🔌 API Endpoints
 
-**Base URL:** `https://${projectId}.supabase.co/functions/v1/make-server-0f597298`
+**Interface:** Supabase RPC (`public` schema). Use `supabase.rpc(fn, params)` from the client.
 
-### Authentication
-All endpoints require:
-- **Header:** `Authorization: Bearer ${token}`
-- **Header:** `X-User-ID: ${userId}` (for anonymous users)
+### Core RPC Calls
 
-### Endpoints List
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| POST | `/user/init` | Initialize/get user data |
-| GET | `/user/balance` | Get current balance |
-| GET | `/ads/next` | Get next ad (deprecated, use client config) |
-| POST | `/ads/complete` | Complete ad watch & claim reward |
-| POST | `/orders/create` | Create TON payment order |
-| GET | `/orders/:orderId` | Check order status |
-| POST | `/orders/:orderId/confirm` | Confirm payment (manual/webhook) |
-| GET | `/stats` | Get user statistics |
-| GET | `/rewards/status` | Get claimed rewards status |
-| POST | `/rewards/claim` | Claim partner reward |
+| RPC Function | Description |
+|--------------|-------------|
+| `app_init_user` | Ensure a user exists and return baseline profile |
+| `app_get_user_balance` | Return energy, boost state, multiplier |
+| `app_complete_ad_watch` | Apply ad reward, log watch, update counts |
+| `app_get_stats` | Aggregate watch/session history for dashboards |
+| `app_create_order` | Create TON boost purchase order |
+| `app_confirm_order` | Confirm boost purchase manually |
+| `app_register_ton_payment` | Register TON payment webhook payload |
+| `app_get_payment_status` | Inspect latest TON payment status |
+| `app_retry_ton_payment` | Trigger payment re-validation |
+| `app_get_reward_status` | Fetch partner reward claims |
+| `app_claim_reward` | Claim partner reward and credit energy |
 
 ---
 
@@ -356,7 +348,7 @@ className="opacity-50 cursor-not-allowed"
 10. Keep mobile-first approach
 
 ### DON'Ts ❌
-1. Don't modify `/supabase/functions/server/kv_store.tsx` (PROTECTED)
+1. Don't bypass Supabase RPC helpers with ad-hoc fetch calls
 2. Don't modify `/components/figma/ImageWithFallback.tsx` (PROTECTED)
 3. Don't create new files in `/components/ui` (ShadCN only)
 4. Don't add font size/weight classes without request

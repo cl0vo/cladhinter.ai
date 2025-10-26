@@ -19,20 +19,20 @@ export interface Ad {
 }
 
 export interface WatchLog {
-  id?: number;
+  id: string;
   user_id: string;
   ad_id: string;
   reward: number;
   base_reward: number;
   multiplier: number;
   created_at: string;
-  country_code?: string | null;
+  country_code: string | null;
 }
 
 export interface SessionLog {
-  id?: number;
-  user_id?: string;
-  country_code?: string | null;
+  id: string;
+  user_id: string;
+  country_code: string | null;
   created_at: string;
   last_activity_at: string;
 }
