@@ -175,8 +175,7 @@ Blockchain (TON - Future Integration)
 │   └── create-indexes.ts     # Ensures database indexes for core collections
 ├── utils/                # Utility functions
 │   ├── helpers.ts           # Helper functions
-│   ├── telegram.ts          # Telegram Web App utils
-│   └── test-api.ts          # API testing tools
+│   └── telegram.ts          # Telegram Web App utils
 ├── types/                # TypeScript types
 ├── App.tsx               # Main app component
 └── styles/               # Global styles
@@ -187,12 +186,7 @@ Blockchain (TON - Future Integration)
 ## 🧪 Testing
 
 ### Manual Testing
-```bash
-# In the browser console run individual helpers:
-await window.testApi.testUserInit()
-await window.testApi.testGetBalance()
-await window.testApi.testCompleteAd('ad_demo')
-```
+Use the REST endpoints exposed under `/api/*` with your preferred HTTP client (e.g., curl, Postman) while the dev server is running.
 
 The app runs on [http://localhost:5173](http://localhost:5173) by default.
 

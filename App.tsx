@@ -8,7 +8,6 @@ import { LoadingAnimation } from './components/LoadingAnimation';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAuth } from './hooks/useAuth';
 import { initTelegramWebApp } from './utils/telegram';
-import './utils/test-api'; // Load API tester for development
 import { TonConnectButton } from './components/TonConnectButton';
 import { GlassCard } from './components/GlassCard';
 
