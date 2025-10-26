@@ -41,37 +41,6 @@ function resolveBoost(level: number) {
   return boost;
 }
 
-export async function addUser(userId: string, walletAddress?: string | null, countryCode?: string | null) {
-  const existing = await UserModel.findById(userId);
-
-  if (existing) {
-    if (walletAddress && !existing.wallet) {
-      existing.wallet = walletAddress;
-      existing.walletAddress = walletAddress;
-    }
-    if (countryCode && !existing.countryCode) {
-      existing.countryCode = countryCode;
-    }
-    existing.lastSeenAt = new Date();
-    await existing.save();
-    return existing;
-  }
-
-  const now = new Date();
-  const user = await UserModel.create({
-    _id: userId,
-    wallet: walletAddress ?? null,
-    walletAddress: walletAddress ?? null,
-    walletVerified: false,
-    countryCode: countryCode ?? null,
-    energy: 0,
-    boostLevel: 0,
-    lastSeenAt: now,
-  });
-
-  return user;
-}
-
 export async function initUser({
   userId,
   walletAddress,
@@ -491,18 +460,5 @@ export async function claimReward({
     new_balance: user.energy,
     partner_name: partner.name,
   };
-}
-
-export async function listUsers() {
-  const users = await UserModel.find().sort({ createdAt: -1 }).lean();
-
-  return users.map((user) => ({
-    id: user._id,
-    energy: user.energy,
-    boost_level: user.boostLevel,
-    boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
-    country_code: user.countryCode ?? null,
-    created_at: user.createdAt?.toISOString?.() ?? new Date().toISOString(),
-  }));
 }
 

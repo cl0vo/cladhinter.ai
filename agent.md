@@ -17,7 +17,7 @@ MongoDB (MONGOBASE_MONGODB_URI env)
 ```
 
 ## 📁 Key Directories
-- `components/` – UI. `TodoList.tsx` now demonstrates user creation/listing via Mongo.
+- `components/` – UI.
 - `hooks/` – `useApi.tsx` wraps REST helpers from `utils/api/sqlClient.ts`.
 - `server/` – Node-only code (models, services, middleware).
 - `server/mongo.ts` – Shared MongoDB client + Mongoose connector. Requires `MONGOBASE_MONGODB_URI`.
@@ -31,9 +31,9 @@ MongoDB (MONGOBASE_MONGODB_URI env)
 - `window.testApi` is included by default for dev. Strip it from production builds if necessary.
 
 ## ✅ Sample Operations
-- **Create user:** `await createUser({ userId: 'demo_1' })`
-- **List users:** `await listUsersRequest()`
-- Additional actions: `initUser`, `completeAdWatch`, `createOrder`, `claimReward`, etc. All map to routes defined in `server/routes.ts`.
+- **Init user:** `await initUser({ userId: 'demo_1' })`
+- **Fetch balance:** `await getUserBalance({ userId: 'demo_1' })`
+- Additional actions: `completeAdWatch`, `createOrder`, `claimReward`, etc. All map to routes defined in `server/routes.ts`.
 
 ## 🛠 Tooling
 - `npm run dev` – Vite dev server + Mongo connection.
