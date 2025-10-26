@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 
-import { connectToDatabase } from './mongo';
+import { ensureDatabase } from './postgres';
 import {
   claimReward,
   completeAdWatch,
@@ -64,7 +64,7 @@ export function createApiMiddleware(): Middleware {
     }
 
     try {
-      await connectToDatabase();
+      await ensureDatabase();
     } catch (error) {
       sendJson(res, 500, { error: (error as Error).message });
       return;

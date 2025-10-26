@@ -3,12 +3,139 @@ import { randomUUID } from 'node:crypto';
 import { BOOSTS, DAILY_VIEW_LIMIT, ENERGY_PER_AD, boostMultiplier } from '../../../shared/config/economy';
 import { adCreatives } from '../../../shared/config/ads';
 import { getActivePartners, getPartnerById } from '../../../shared/config/partners';
-import { LedgerModel } from '../models/Ledger';
-import { UserModel } from '../models/User';
-import { WatchLogModel } from '../models/WatchLog';
-import { SessionLogModel } from '../models/SessionLog';
-import { OrderModel, type OrderStatus } from '../models/Order';
-import { RewardClaimModel } from '../models/RewardClaim';
+import { getExecutor, query, withTransaction, type SqlExecutor } from '../postgres';
+
+export type OrderStatus =
+  | 'pending'
+  | 'pending_verification'
+  | 'awaiting_webhook'
+  | 'paid'
+  | 'failed';
+
+interface UserRow {
+  id: string;
+  wallet: string | null;
+  wallet_address: string | null;
+  wallet_verified: boolean;
+  country_code: string | null;
+  energy: number;
+  boost_level: number;
+  boost_expires_at: Date | string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+  last_seen_at: Date | string;
+  total_earned: number;
+  total_watches: number;
+  session_count: number;
+  daily_watch_count: number;
+  daily_watch_date: string | null;
+  claimed_partners: string[] | null;
+  last_watch_at: Date | string | null;
+}
+
+interface OrderRow {
+  id: string;
+  user_id: string;
+  boost_level: number;
+  ton_amount: number;
+  status: OrderStatus;
+  payload: string;
+  tx_hash: string | null;
+  tx_lt: string | null;
+  merchant_wallet: string;
+  paid_at: Date | string | null;
+  created_at: Date | string;
+  verification_attempts: number;
+  verification_error: string | null;
+  last_payment_check: Date | string | null;
+  last_event: unknown | null;
+}
+
+interface WatchLogRow {
+  id: string;
+  user_id: string;
+  ad_id: string;
+  reward: number;
+  base_reward: number;
+  multiplier: number;
+  country_code: string | null;
+  created_at: Date | string;
+}
+
+interface SessionLogRow {
+  id: string;
+  user_id: string;
+  country_code: string | null;
+  created_at: Date | string;
+  last_activity_at: Date | string;
+}
+
+interface LedgerRow {
+  id: string;
+  user_id: string;
+  wallet: string;
+  amount: number;
+  currency: string;
+  type: 'credit' | 'debit';
+  metadata: Record<string, unknown> | null;
+  created_at: Date | string;
+}
+
+interface PaymentEvent {
+  id: number;
+  status: string;
+  receivedAt: string;
+  wallet: string;
+  amount: number;
+}
+
+interface UserEntity {
+  id: string;
+  wallet: string | null;
+  walletAddress: string | null;
+  walletVerified: boolean;
+  countryCode: string | null;
+  energy: number;
+  boostLevel: number;
+  boostExpiresAt: Date | null;
+  lastSeenAt: Date;
+  totalEarned: number;
+  totalWatches: number;
+  sessionCount: number;
+  dailyWatchCount: number;
+  dailyWatchDate: string | null;
+  claimedPartners: string[];
+  lastWatchAt: Date | null;
+}
+
+function toDate(value: Date | string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  return value instanceof Date ? value : new Date(value);
+}
+
+function mapUserRow(row: UserRow): UserEntity {
+  return {
+    id: row.id,
+    wallet: row.wallet,
+    walletAddress: row.wallet_address,
+    walletVerified: row.wallet_verified,
+    countryCode: row.country_code,
+    energy: Number(row.energy ?? 0),
+    boostLevel: Number(row.boost_level ?? 0),
+    boostExpiresAt: toDate(row.boost_expires_at),
+    lastSeenAt: toDate(row.last_seen_at) ?? new Date(),
+    totalEarned: Number(row.total_earned ?? 0),
+    totalWatches: Number(row.total_watches ?? 0),
+    sessionCount: Number(row.session_count ?? 0),
+    dailyWatchCount: Number(row.daily_watch_count ?? 0),
+    dailyWatchDate: row.daily_watch_date,
+    claimedPartners: row.claimed_partners ?? [],
+    lastWatchAt: toDate(row.last_watch_at),
+  };
+}
 
 function ensureEntityExists<T>(entity: T | null | undefined, identifier: string): asserts entity is T {
   if (!entity) {
@@ -23,29 +150,52 @@ function resolveUserWallet(
   return user?.wallet ?? user?.walletAddress ?? fallback ?? '';
 }
 
-async function recordLedgerEntry({
-  userId,
-  wallet,
-  amount,
-  type,
-  metadata,
-  idemKey,
-}: {
-  userId: string;
-  wallet: string | null | undefined;
-  amount: number;
-  type: 'credit' | 'debit';
-  metadata?: Record<string, unknown> | null;
-  idemKey: string;
-}) {
-  await LedgerModel.create({
+async function fetchUserById(executor: SqlExecutor, userId: string, options: { forUpdate?: boolean } = {}): Promise<UserEntity | null> {
+  const suffix = options.forUpdate ? ' FOR UPDATE' : '';
+  const result = await executor.query<UserRow>(`SELECT * FROM users WHERE id = $1${suffix}`, [userId]);
+  if (result.rows.length === 0) {
+    return null;
+  }
+  return mapUserRow(result.rows[0]);
+}
+
+async function fetchOrderById(executor: SqlExecutor, orderId: string, options: { forUpdate?: boolean } = {}): Promise<OrderRow | null> {
+  const suffix = options.forUpdate ? ' FOR UPDATE' : '';
+  const result = await executor.query<OrderRow>(`SELECT * FROM orders WHERE id = $1${suffix}`, [orderId]);
+  return result.rows[0] ?? null;
+}
+
+async function recordLedgerEntry(
+  executor: SqlExecutor,
+  {
     userId,
-    wallet: wallet ?? '',
+    wallet,
     amount,
     type,
+    metadata,
     idemKey,
-    metadata: metadata ?? null,
-  });
+  }: {
+    userId: string;
+    wallet: string | null | undefined;
+    amount: number;
+    type: 'credit' | 'debit';
+    metadata?: Record<string, unknown> | null;
+    idemKey: string;
+  },
+): Promise<void> {
+  await executor.query(
+    `INSERT INTO ledger (id, user_id, wallet, amount, type, metadata, idem_key)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
+    [
+      randomUUID(),
+      userId,
+      wallet ?? '',
+      amount,
+      type,
+      metadata ? JSON.stringify(metadata) : null,
+      idemKey,
+    ],
+  );
 }
 
 function getAdBaseReward(adId: string): number {
@@ -83,46 +233,57 @@ export async function initUser({
   walletAddress?: string | null;
   countryCode?: string | null;
 }) {
-  let user = await UserModel.findById(userId);
+  return withTransaction(async (client) => {
+    const now = new Date();
+    const wallet = walletAddress ?? null;
 
-  const now = new Date();
-  if (!user) {
-    user = await UserModel.create({
-      _id: userId,
-      wallet: walletAddress ?? null,
-      walletAddress: walletAddress ?? null,
-      walletVerified: false,
-      countryCode: countryCode ?? null,
-      energy: 0,
-      boostLevel: 0,
-      lastSeenAt: now,
-    });
-  } else {
-    if (walletAddress && !user.wallet) {
-      user.wallet = walletAddress;
-      user.walletAddress = walletAddress;
+    let user = await fetchUserById(client, userId, { forUpdate: true });
+
+    if (!user) {
+      const result = await client.query<UserRow>(
+        `INSERT INTO users (
+           id, wallet, wallet_address, wallet_verified, country_code, energy, boost_level, boost_expires_at,
+           created_at, updated_at, last_seen_at, total_earned, total_watches, session_count, daily_watch_count,
+           daily_watch_date, claimed_partners, last_watch_at
+         )
+         VALUES ($1, $2, $2, FALSE, $3, 0, 0, NULL, $4, $4, $4, 0, 0, 1, 0, NULL, ARRAY[]::TEXT[], NULL)
+         RETURNING *`,
+        [userId, wallet, countryCode ?? null, now.toISOString()],
+      );
+      user = mapUserRow(result.rows[0]);
+    } else {
+      const result = await client.query<UserRow>(
+        `UPDATE users
+           SET wallet = CASE WHEN wallet IS NULL AND $2 IS NOT NULL THEN $2 ELSE wallet END,
+               wallet_address = CASE WHEN wallet_address IS NULL AND $2 IS NOT NULL THEN $2 ELSE wallet_address END,
+               country_code = COALESCE($3, country_code),
+               last_seen_at = $4,
+               session_count = session_count + 1,
+               updated_at = $4
+         WHERE id = $1
+         RETURNING *`,
+        [userId, wallet, countryCode ?? null, now.toISOString()],
+      );
+      user = mapUserRow(result.rows[0]);
     }
-    user.countryCode = countryCode ?? user.countryCode ?? null;
-    user.lastSeenAt = now;
-  }
 
-  user.sessionCount += 1;
-  await user.save();
+    const sessionId = randomUUID();
+    await client.query(
+      `INSERT INTO session_logs (id, user_id, country_code, created_at, last_activity_at)
+       VALUES ($1, $2, $3, $4, $4)`,
+      [sessionId, userId, user.countryCode ?? null, now.toISOString()],
+    );
 
-  await SessionLogModel.create({
-    userId,
-    countryCode: user.countryCode ?? null,
+    return {
+      user: {
+        id: user.id,
+        energy: user.energy,
+        boost_level: user.boostLevel,
+        boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+        country_code: user.countryCode ?? null,
+      },
+    };
   });
-
-  return {
-    user: {
-      id: user._id,
-      energy: user.energy,
-      boost_level: user.boostLevel,
-      boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
-      country_code: user.countryCode ?? null,
-    },
-  };
 }
 
 export async function getUserBalance({
@@ -130,7 +291,8 @@ export async function getUserBalance({
 }: {
   userId: string;
 }) {
-  const user = await UserModel.findById(userId);
+  const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
+  const user = userResult.rows[0] ? mapUserRow(userResult.rows[0]) : null;
   ensureEntityExists(user, `User ${userId}`);
 
   return {
@@ -148,63 +310,82 @@ export async function completeAdWatch({
   userId: string;
   adId: string;
 }) {
-  const user = await UserModel.findById(userId);
-  ensureEntityExists(user, `User ${userId}`);
+  return withTransaction(async (client) => {
+    let user = await fetchUserById(client, userId, { forUpdate: true });
+    ensureEntityExists(user, `User ${userId}`);
 
-  const now = new Date();
-  const today = todayKey(now);
+    const now = new Date();
+    const today = todayKey(now);
 
-  if (user.dailyWatchDate !== today) {
-    user.dailyWatchDate = today;
-    user.dailyWatchCount = 0;
-  }
+    let dailyWatchCount = user.dailyWatchCount;
+    let dailyWatchDate = user.dailyWatchDate;
 
-  if (user.dailyWatchCount >= DAILY_VIEW_LIMIT) {
-    throw new Error('Daily ad limit reached');
-  }
+    if (dailyWatchDate !== today) {
+      dailyWatchCount = 0;
+      dailyWatchDate = today;
+    }
 
-  const baseReward = getAdBaseReward(adId);
-  const multiplier = boostMultiplier(user.boostLevel);
-  const reward = Math.round(baseReward * multiplier * 100) / 100;
+    if (dailyWatchCount >= DAILY_VIEW_LIMIT) {
+      throw new Error('Daily ad limit reached');
+    }
 
-  user.energy += reward;
-  user.totalEarned += reward;
-  user.totalWatches += 1;
-  user.dailyWatchCount += 1;
-  user.lastWatchAt = now;
+    const baseReward = getAdBaseReward(adId);
+    const multiplier = boostMultiplier(user.boostLevel);
+    const reward = Math.round(baseReward * multiplier * 100) / 100;
 
-  await user.save();
+    const updatedResult = await client.query<UserRow>(
+      `UPDATE users
+         SET energy = $2,
+             total_earned = $3,
+             total_watches = $4,
+             daily_watch_count = $5,
+             daily_watch_date = $6,
+             last_watch_at = $7,
+             updated_at = $7
+       WHERE id = $1
+       RETURNING *`,
+      [
+        userId,
+        user.energy + reward,
+        user.totalEarned + reward,
+        user.totalWatches + 1,
+        dailyWatchCount + 1,
+        dailyWatchDate,
+        now.toISOString(),
+      ],
+    );
 
-  const watchLog = await WatchLogModel.create({
-    userId,
-    adId,
-    reward,
-    baseReward,
-    multiplier,
-    countryCode: user.countryCode ?? null,
+    user = mapUserRow(updatedResult.rows[0]);
+
+    const watchLogId = randomUUID();
+    await client.query(
+      `INSERT INTO watch_logs (id, user_id, ad_id, reward, base_reward, multiplier, country_code, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [watchLogId, userId, adId, reward, baseReward, multiplier, user.countryCode ?? null, now.toISOString()],
+    );
+
+    await recordLedgerEntry(getExecutor(client), {
+      userId,
+      wallet: resolveUserWallet(user),
+      amount: reward,
+      type: 'credit',
+      metadata: {
+        adId,
+        watchLogId,
+      },
+      idemKey: `ad:${watchLogId}`,
+    });
+
+    const dailyRemaining = Math.max(DAILY_VIEW_LIMIT - user.dailyWatchCount, 0);
+
+    return {
+      success: true,
+      reward,
+      new_balance: user.energy,
+      multiplier,
+      daily_watches_remaining: dailyRemaining,
+    };
   });
-
-  await recordLedgerEntry({
-    userId,
-    wallet: resolveUserWallet(user),
-    amount: reward,
-    type: 'credit',
-    metadata: {
-      adId,
-      watchLogId: String(watchLog._id),
-    },
-    idemKey: `ad:${String(watchLog._id)}`,
-  });
-
-  const dailyRemaining = Math.max(DAILY_VIEW_LIMIT - user.dailyWatchCount, 0);
-
-  return {
-    success: true,
-    reward,
-    new_balance: user.energy,
-    multiplier,
-    daily_watches_remaining: dailyRemaining,
-  };
 }
 
 function createPayload(): string {
@@ -220,30 +401,32 @@ export async function createOrder({
   userId: string;
   boostLevel: number;
 }) {
-  const user = await UserModel.findById(userId);
-  ensureEntityExists(user, `User ${userId}`);
+  return withTransaction(async (client) => {
+    const user = await fetchUserById(client, userId, { forUpdate: true });
+    ensureEntityExists(user, `User ${userId}`);
 
-  const boost = resolveBoost(boostLevel);
-  const orderId = randomUUID();
+    const boost = resolveBoost(boostLevel);
+    const orderId = randomUUID();
+    const payload = createPayload();
 
-  const order = await OrderModel.create({
-    _id: orderId,
-    userId,
-    boostLevel,
-    tonAmount: boost.costTon,
-    status: 'pending',
-    payload: createPayload(),
-    merchantWallet: DEFAULT_MERCHANT,
+    const orderResult = await client.query<OrderRow>(
+      `INSERT INTO orders (id, user_id, boost_level, ton_amount, status, payload, merchant_wallet)
+       VALUES ($1, $2, $3, $4, 'pending', $5, $6)
+       RETURNING *`,
+      [orderId, userId, boostLevel, boost.costTon, payload, DEFAULT_MERCHANT],
+    );
+
+    const order = orderResult.rows[0];
+
+    return {
+      order_id: order.id,
+      address: order.merchant_wallet,
+      amount: order.ton_amount,
+      payload: order.payload,
+      boost_name: boost.name,
+      duration_days: boost.durationDays ?? 0,
+    };
   });
-
-  return {
-    order_id: order._id,
-    address: order.merchantWallet,
-    amount: order.tonAmount,
-    payload: order.payload,
-    boost_name: boost.name,
-    duration_days: boost.durationDays ?? 0,
-  };
 }
 
 export async function confirmOrder({
@@ -255,54 +438,71 @@ export async function confirmOrder({
   orderId: string;
   txHash?: string | null;
 }) {
-  const order = await OrderModel.findById(orderId);
-  ensureEntityExists(order, `Order ${orderId}`);
+  return withTransaction(async (client) => {
+    const order = await fetchOrderById(client, orderId, { forUpdate: true });
+    ensureEntityExists(order, `Order ${orderId}`);
 
-  if (order.userId !== userId) {
-    throw new Error('Order does not belong to user');
-  }
+    if (order.user_id !== userId) {
+      throw new Error('Order does not belong to user');
+    }
 
-  const user = await UserModel.findById(userId);
-  ensureEntityExists(user, `User ${userId}`);
+    let user = await fetchUserById(client, userId, { forUpdate: true });
+    ensureEntityExists(user, `User ${userId}`);
 
-  const boost = resolveBoost(order.boostLevel);
+    const boost = resolveBoost(order.boost_level);
 
-  order.status = 'paid';
-  order.txHash = txHash ?? order.txHash ?? null;
-  order.paidAt = new Date();
-  order.lastPaymentCheck = new Date();
+    const now = new Date();
+    const updatedOrderResult = await client.query<OrderRow>(
+      `UPDATE orders
+         SET status = 'paid',
+             tx_hash = COALESCE($2, tx_hash),
+             paid_at = $3,
+             last_payment_check = $3
+       WHERE id = $1
+       RETURNING *`,
+      [orderId, txHash ?? null, now.toISOString()],
+    );
 
-  await order.save();
+    const maxBoost = Math.max(user.boostLevel, order.boost_level);
+    let boostExpires: Date | null = user.boostExpiresAt;
+    if (boost.durationDays && boost.durationDays > 0) {
+      const expires = new Date();
+      expires.setUTCDate(expires.getUTCDate() + boost.durationDays);
+      boostExpires = expires;
+    }
 
-  user.boostLevel = Math.max(user.boostLevel, order.boostLevel);
+    const updatedUserResult = await client.query<UserRow>(
+      `UPDATE users
+         SET boost_level = $2,
+             boost_expires_at = $3,
+             updated_at = $4
+       WHERE id = $1
+       RETURNING *`,
+      [userId, maxBoost, boostExpires ? boostExpires.toISOString() : null, now.toISOString()],
+    );
 
-  if (boost.durationDays) {
-    const expires = new Date();
-    expires.setUTCDate(expires.getUTCDate() + boost.durationDays);
-    user.boostExpiresAt = expires;
-  }
+    user = mapUserRow(updatedUserResult.rows[0]);
 
-  await user.save();
+    await recordLedgerEntry(getExecutor(client), {
+      userId,
+      wallet: resolveUserWallet(user),
+      amount: order.ton_amount,
+      type: 'debit',
+      metadata: {
+        orderId: order.id,
+        txHash: txHash ?? order.tx_hash ?? null,
+        boostLevel: order.boost_level,
+      },
+      idemKey: `order:confirm:${order.id}`,
+    });
 
-  await recordLedgerEntry({
-    userId,
-    wallet: resolveUserWallet(user),
-    amount: order.tonAmount,
-    type: 'debit',
-    metadata: {
-      orderId: order._id,
-      txHash: order.txHash ?? null,
-      boostLevel: order.boostLevel,
-    },
-    idemKey: `order:confirm:${order._id}`,
+    return {
+      success: true,
+      boost_level: user.boostLevel,
+      boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+      multiplier: boostMultiplier(user.boostLevel),
+    };
   });
-
-  return {
-    success: true,
-    boost_level: user.boostLevel,
-    boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
-    multiplier: boostMultiplier(user.boostLevel),
-  };
 }
 
 export async function registerTonPayment({
@@ -318,43 +518,59 @@ export async function registerTonPayment({
   boc: string;
   status?: OrderStatus;
 }) {
-  const order = await OrderModel.findById(orderId);
-  ensureEntityExists(order, `Order ${orderId}`);
+  return withTransaction(async (client) => {
+    const order = await fetchOrderById(client, orderId, { forUpdate: true });
+    ensureEntityExists(order, `Order ${orderId}`);
 
-  order.status = status ?? 'pending_verification';
-  order.lastPaymentCheck = new Date();
-  order.verificationAttempts += 1;
-  order.lastEvent = {
-    id: Date.now(),
-    status: 'submitted',
-    receivedAt: new Date(),
-    wallet,
-    amount,
-  };
-  order.verificationError = null;
+    const verificationAttempts = order.verification_attempts + 1;
+    const now = new Date();
+    const updatedOrderResult = await client.query<OrderRow>(
+      `UPDATE orders
+         SET status = $2,
+             last_payment_check = $3,
+             verification_attempts = $4,
+             verification_error = NULL,
+             last_event = $5::jsonb
+       WHERE id = $1
+       RETURNING *`,
+      [
+        orderId,
+        status ?? 'pending_verification',
+        now.toISOString(),
+        verificationAttempts,
+        JSON.stringify({
+          id: Date.now(),
+          status: 'submitted',
+          receivedAt: now.toISOString(),
+          wallet,
+          amount,
+        }),
+      ],
+    );
 
-  await order.save();
+    const updatedOrder = updatedOrderResult.rows[0];
 
-  const user = await UserModel.findById(order.userId);
+    const user = await fetchUserById(client, order.user_id);
 
-  await recordLedgerEntry({
-    userId: order.userId,
-    wallet: resolveUserWallet(user, wallet),
-    amount,
-    type: 'debit',
-    metadata: {
-      orderId: order._id,
-      boc,
-      status: order.status,
-    },
-    idemKey: `order:payment:${order._id}:${order.verificationAttempts}`,
+    await recordLedgerEntry(getExecutor(client), {
+      userId: order.user_id,
+      wallet: resolveUserWallet(user, wallet),
+      amount,
+      type: 'debit',
+      metadata: {
+        orderId: order.id,
+        boc,
+        status: updatedOrder.status,
+      },
+      idemKey: `order:payment:${order.id}:${verificationAttempts}`,
+    });
+
+    return {
+      success: true,
+      order_id: order.id,
+      status: updatedOrder.status,
+    };
   });
-
-  return {
-    success: true,
-    order_id: order._id,
-    status: order.status,
-  };
 }
 
 export async function retryPayment({
@@ -364,24 +580,33 @@ export async function retryPayment({
   userId: string;
   orderId: string;
 }) {
-  const order = await OrderModel.findById(orderId);
-  ensureEntityExists(order, `Order ${orderId}`);
+  return withTransaction(async (client) => {
+    const order = await fetchOrderById(client, orderId, { forUpdate: true });
+    ensureEntityExists(order, `Order ${orderId}`);
 
-  if (order.userId !== userId) {
-    throw new Error('Order does not belong to user');
-  }
+    if (order.user_id !== userId) {
+      throw new Error('Order does not belong to user');
+    }
 
-  order.verificationAttempts += 1;
-  order.lastPaymentCheck = new Date();
+    const now = new Date();
+    const updatedOrderResult = await client.query<OrderRow>(
+      `UPDATE orders
+         SET verification_attempts = verification_attempts + 1,
+             last_payment_check = $2
+       WHERE id = $1
+       RETURNING *`,
+      [orderId, now.toISOString()],
+    );
 
-  await order.save();
+    const updatedOrder = updatedOrderResult.rows[0];
 
-  return {
-    success: true,
-    status: order.status,
-    verification_attempts: order.verificationAttempts,
-    last_payment_check: order.lastPaymentCheck?.toISOString() ?? null,
-  };
+    return {
+      success: true,
+      status: updatedOrder.status,
+      verification_attempts: updatedOrder.verification_attempts,
+      last_payment_check: updatedOrder.last_payment_check ? new Date(updatedOrder.last_payment_check).toISOString() : null,
+    };
+  });
 }
 
 export async function getPaymentStatus({
@@ -391,29 +616,32 @@ export async function getPaymentStatus({
   userId: string;
   orderId: string;
 }) {
-  const order = await OrderModel.findById(orderId);
+  const orderResult = await query<OrderRow>('SELECT * FROM orders WHERE id = $1', [orderId]);
+  const order = orderResult.rows[0];
   ensureEntityExists(order, `Order ${orderId}`);
 
-  if (order.userId !== userId) {
+  if (order.user_id !== userId) {
     throw new Error('Order does not belong to user');
   }
 
+  const lastEvent = order.last_event as PaymentEvent | null;
+
   return {
-    order_id: order._id,
+    order_id: order.id,
     status: order.status,
-    paid_at: order.paidAt ? order.paidAt.toISOString() : null,
-    tx_hash: order.txHash ?? null,
-    tx_lt: order.txLt ?? null,
-    verification_attempts: order.verificationAttempts,
-    verification_error: order.verificationError ?? null,
-    last_payment_check: order.lastPaymentCheck ? order.lastPaymentCheck.toISOString() : null,
-    last_event: order.lastEvent
+    paid_at: order.paid_at ? new Date(order.paid_at).toISOString() : null,
+    tx_hash: order.tx_hash ?? null,
+    tx_lt: order.tx_lt ?? null,
+    verification_attempts: order.verification_attempts,
+    verification_error: order.verification_error ?? null,
+    last_payment_check: order.last_payment_check ? new Date(order.last_payment_check).toISOString() : null,
+    last_event: lastEvent
       ? {
-          id: order.lastEvent.id,
-          status: order.lastEvent.status,
-          received_at: order.lastEvent.receivedAt.toISOString(),
-          wallet: order.lastEvent.wallet,
-          amount: order.lastEvent.amount,
+          id: lastEvent.id,
+          status: lastEvent.status,
+          received_at: new Date(lastEvent.receivedAt).toISOString(),
+          wallet: lastEvent.wallet,
+          amount: lastEvent.amount,
         }
       : undefined,
   };
@@ -424,23 +652,31 @@ export async function getUserStats({
 }: {
   userId: string;
 }) {
-  const user = await UserModel.findById(userId);
+  const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
+  const userRow = userResult.rows[0];
+  const user = userRow ? mapUserRow(userRow) : null;
   ensureEntityExists(user, `User ${userId}`);
 
-  const [watchHistory, todayCount, sessions, totalEarned] = await Promise.all([
-    WatchLogModel.find({ userId }).sort({ createdAt: -1 }).limit(25).lean(),
-    WatchLogModel.countDocuments({
-      userId,
-      createdAt: { $gte: new Date(todayKey()) },
-    }),
-    SessionLogModel.find({ userId }).sort({ createdAt: -1 }).limit(10).lean(),
-    WatchLogModel.aggregate([
-      { $match: { userId } },
-      { $group: { _id: null, total: { $sum: '$reward' } } },
-    ]),
+  const todayStart = new Date(todayKey());
+
+  const [watchHistoryResult, todayCountResult, sessionsResult, totalEarnedResult] = await Promise.all([
+    query<WatchLogRow>(
+      `SELECT * FROM watch_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT 25`,
+      [userId],
+    ),
+    query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM watch_logs WHERE user_id = $1 AND created_at >= $2`,
+      [userId, todayStart.toISOString()],
+    ),
+    query<SessionLogRow>(
+      `SELECT * FROM session_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`,
+      [userId],
+    ),
+    query<{ total: number | null }>(`SELECT COALESCE(SUM(reward), 0) AS total FROM watch_logs WHERE user_id = $1`, [userId]),
   ]);
 
-  const totalEarnedValue = totalEarned[0]?.total ?? 0;
+  const totalEarnedValue = Number(totalEarnedResult.rows[0]?.total ?? 0);
+  const todayCount = Number(todayCountResult.rows[0]?.count ?? '0');
 
   return {
     totals: {
@@ -457,22 +693,22 @@ export async function getUserStats({
       expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
     },
     country_code: user.countryCode ?? null,
-    watch_history: watchHistory.map((item) => ({
-      id: String(item._id),
+    watch_history: watchHistoryResult.rows.map((item) => ({
+      id: item.id,
       user_id: userId,
-      ad_id: item.adId,
+      ad_id: item.ad_id,
       reward: item.reward,
-      base_reward: item.baseReward,
+      base_reward: item.base_reward,
       multiplier: item.multiplier,
-      created_at: item.createdAt.toISOString(),
-      country_code: item.countryCode ?? null,
+      created_at: new Date(item.created_at).toISOString(),
+      country_code: item.country_code ?? null,
     })),
-    session_history: sessions.map((session) => ({
-      id: String(session._id),
+    session_history: sessionsResult.rows.map((session) => ({
+      id: session.id,
       user_id: userId,
-      country_code: session.countryCode ?? null,
-      created_at: session.createdAt.toISOString(),
-      last_activity_at: session.lastActivityAt.toISOString(),
+      country_code: session.country_code ?? null,
+      created_at: new Date(session.created_at).toISOString(),
+      last_activity_at: new Date(session.last_activity_at).toISOString(),
     })),
   };
 }
@@ -482,7 +718,8 @@ export async function getRewardStatus({
 }: {
   userId: string;
 }) {
-  const user = await UserModel.findById(userId);
+  const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
+  const user = userResult.rows[0] ? mapUserRow(userResult.rows[0]) : null;
   ensureEntityExists(user, `User ${userId}`);
 
   const claimed = user.claimedPartners;
@@ -507,45 +744,61 @@ export async function claimReward({
     throw new Error('Partner reward is unavailable');
   }
 
-  const user = await UserModel.findById(userId);
-  ensureEntityExists(user, `User ${userId}`);
+  return withTransaction(async (client) => {
+    let user = await fetchUserById(client, userId, { forUpdate: true });
+    ensureEntityExists(user, `User ${userId}`);
 
-  if (user.claimedPartners.includes(partnerId)) {
-    throw new Error('Reward already claimed');
-  }
+    if (user.claimedPartners.includes(partnerId)) {
+      throw new Error('Reward already claimed');
+    }
 
-  user.claimedPartners.push(partnerId);
-  user.energy += partner.reward;
-  user.totalEarned += partner.reward;
+    const now = new Date();
+    const updatedResult = await client.query<UserRow>(
+      `UPDATE users
+         SET claimed_partners = $2,
+             energy = $3,
+             total_earned = $4,
+             updated_at = $5
+       WHERE id = $1
+       RETURNING *`,
+      [
+        userId,
+        [...user.claimedPartners, partnerId],
+        user.energy + partner.reward,
+        user.totalEarned + partner.reward,
+        now.toISOString(),
+      ],
+    );
 
-  await user.save();
+    user = mapUserRow(updatedResult.rows[0]);
 
-  const rewardClaim = await RewardClaimModel.create({
-    userId,
-    partnerId,
-    reward: partner.reward,
-    partnerName: partner.name,
+    const rewardClaimId = randomUUID();
+    await client.query(
+      `INSERT INTO reward_claims (id, user_id, partner_id, reward, partner_name, claimed_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [rewardClaimId, userId, partnerId, partner.reward, partner.name, now.toISOString()],
+    );
+
+    await recordLedgerEntry(getExecutor(client), {
+      userId,
+      wallet: resolveUserWallet(user),
+      amount: partner.reward,
+      type: 'credit',
+      metadata: {
+        partnerId,
+        partnerName: partner.name,
+        rewardClaimId,
+      },
+      idemKey: `reward:${rewardClaimId}`,
+    });
+
+    return {
+      success: true,
+      reward: partner.reward,
+      new_balance: user.energy,
+      partner_name: partner.name,
+    };
   });
-
-  await recordLedgerEntry({
-    userId,
-    wallet: resolveUserWallet(user),
-    amount: partner.reward,
-    type: 'credit',
-    metadata: {
-      partnerId,
-      partnerName: partner.name,
-      rewardClaimId: String(rewardClaim._id),
-    },
-    idemKey: `reward:${String(rewardClaim._id)}`,
-  });
-
-  return {
-    success: true,
-    reward: partner.reward,
-    new_balance: user.energy,
-    partner_name: partner.name,
-  };
 }
 
 export async function getLedgerHistory({
@@ -557,43 +810,43 @@ export async function getLedgerHistory({
   page?: number;
   limit?: number;
 }) {
-  const user = await UserModel.findById(userId);
+  const userResult = await query<UserRow>('SELECT * FROM users WHERE id = $1', [userId]);
+  const user = userResult.rows[0] ? mapUserRow(userResult.rows[0]) : null;
   ensureEntityExists(user, `User ${userId}`);
 
   const requestedPage = Number(page);
   const requestedLimit = Number(limit);
   const normalizedPage = Number.isFinite(requestedPage) ? Math.max(1, Math.floor(requestedPage)) : 1;
-  const normalizedLimit = Number.isFinite(requestedLimit)
-    ? Math.min(Math.max(Math.floor(requestedLimit), 1), 100)
-    : 20;
-  const skip = (normalizedPage - 1) * normalizedLimit;
+  const normalizedLimit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 100) : 20;
+  const offset = (normalizedPage - 1) * normalizedLimit;
 
-  const [entries, total] = await Promise.all([
-    LedgerModel.find({ userId })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(normalizedLimit)
-      .lean(),
-    LedgerModel.countDocuments({ userId }),
+  const [entriesResult, countResult] = await Promise.all([
+    query<LedgerRow>(
+      `SELECT * FROM ledger WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [userId, normalizedLimit, offset],
+    ),
+    query<{ total: string }>(`SELECT COUNT(*)::text AS total FROM ledger WHERE user_id = $1`, [userId]),
   ]);
+
+  const total = Number(countResult.rows[0]?.total ?? '0');
+  const entries = entriesResult.rows;
 
   return {
     entries: entries.map((entry) => ({
-      id: String(entry._id),
-      user_id: entry.userId,
+      id: entry.id,
+      user_id: entry.user_id,
       wallet: entry.wallet,
       amount: entry.amount,
       currency: entry.currency,
       type: entry.type,
       metadata: entry.metadata ?? null,
-      created_at: entry.createdAt.toISOString(),
+      created_at: new Date(entry.created_at).toISOString(),
     })),
     pagination: {
       page: normalizedPage,
       limit: normalizedLimit,
       total,
-      has_next: skip + entries.length < total,
+      has_next: offset + entries.length < total,
     },
   };
 }
-
