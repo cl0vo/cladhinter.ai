@@ -14,7 +14,7 @@ function resolveApiBase(): string {
     return '/api';
   }
 
-  const normalized = backendUrl.replace(/\/+$, '');
+  const normalized = backendUrl.replace(/\/+$/, '');
   if (normalized.toLowerCase().endsWith('/api')) {
     return normalized;
   }
