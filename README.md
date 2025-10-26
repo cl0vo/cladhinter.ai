@@ -80,16 +80,23 @@ npm run dev
 ```
 Frontend (React + TypeScript + Tailwind)
     ↓
-API Layer (Custom Hooks + Fetch)
+API Layer (Custom Hooks + Supabase RPC)
     ↓
-Backend (Supabase Edge Functions - Hono)
+Backend (Supabase SQL functions)
     ↓
-Database (Supabase KV Store)
+Database (Postgres - app_* tables)
     ↓
 Blockchain (TON - Future Integration)
 ```
 
 **📐 Detailed Architecture**: See [ARCHITECTURE.md](./ARCHITECTURE.md)
+
+---
+
+## 📈 Analytics
+
+- `ad_watch_daily_analytics` — aggregated per-user/per-day watch metrics (count, reward, multiplier) sourced from `ad_watch_logs`.
+- Supabase RPC responses (`app_get_stats`) consume the same relational data, keeping dashboards and clients in sync.
 
 ---
 
@@ -105,9 +112,9 @@ Blockchain (TON - Future Integration)
 
 ### Backend
 - **Supabase** - Backend-as-a-Service
-- **Hono** - Web framework for Edge Functions
-- **Deno** - Runtime environment
-- **KV Store** - Data persistence
+- **Postgres SQL Functions** - Authoritative business logic
+- **pg_cron** - Background processing for TON validation
+- **Materialized analytics view** - Unified watch insights
 
 ### Blockchain
 - **TON** - Payment infrastructure (to be integrated)
