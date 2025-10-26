@@ -13,18 +13,18 @@ React Components / Hooks
         ↓
 Mongoose services (server/services/userService.ts)
         ↓
-MongoDB (MONGODB_URI env)
+MongoDB (MONGOBASE_MONGODB_URI env)
 ```
 
 ## 📁 Key Directories
 - `components/` – UI. `TodoList.tsx` now demonstrates user creation/listing via Mongo.
 - `hooks/` – `useApi.tsx` wraps REST helpers from `utils/api/sqlClient.ts`.
 - `server/` – Node-only code (models, services, middleware).
-- `server/mongo.ts` – Shared MongoDB client + Mongoose connector. Requires `MONGODB_URI` & `MONGODB_DB`.
+- `server/mongo.ts` – Shared MongoDB client + Mongoose connector. Requires `MONGOBASE_MONGODB_URI`.
 - `utils/api/sqlClient.ts` – Fetch helpers used by React hooks/components.
 
 ## ⚠️ Development Guidelines
-- Ensure `MONGODB_URI` is set (e.g. Atlas string) before running `npm run dev`. Vite connects on startup via `vite.config.ts`.
+- Ensure `MONGOBASE_MONGODB_URI` is set (e.g. Atlas/Vercel integration string) before running `npm run dev`. Vite connects on startup via `vite.config.ts`.
 - Server code runs in Node context only. Do **not** import `server/*` files into client bundles.
 - API endpoints expect JSON bodies; handle errors by checking `{ error }` fields returned from middleware.
 - Keep shared config (`config/economy.ts`, `config/partners.ts`) in sync with server logic.
