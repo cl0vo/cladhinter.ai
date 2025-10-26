@@ -1,5 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '../supabase/client';
 import type {
   AdCompleteResponse,
   ClaimRewardResponse,
@@ -8,29 +6,27 @@ import type {
   RetryPaymentResponse,
   UserStatsResponse,
 } from '../../types';
-import type { UserData } from '../../hooks/useUserData';
 
-interface RpcContext {
-  client?: Pick<SupabaseClient, 'rpc'>;
-}
+const API_BASE = '/api';
 
-async function callRpc<T>(
-  fn: string,
-  params: Record<string, unknown>,
-  { client }: RpcContext = {},
-): Promise<T> {
-  const target = client ?? createClient();
-  const { data, error } = await target.rpc<T>(fn, params);
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'same-origin',
+    ...init,
+  });
 
-  if (error) {
-    throw new Error(error.message || `Supabase RPC ${fn} failed`);
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = typeof data?.error === 'string' ? data.error : `Request to ${path} failed`;
+    throw new Error(message);
   }
 
-  if (data === null || typeof data === 'undefined') {
-    throw new Error(`Supabase RPC ${fn} returned no data`);
-  }
-
-  return data;
+  return data as T;
 }
 
 export interface InitUserInput {
@@ -39,74 +35,52 @@ export interface InitUserInput {
   countryCode?: string | null;
 }
 
-export async function initUser(
-  { userId, walletAddress, countryCode }: InitUserInput,
-  context?: RpcContext,
-): Promise<{ user: UserData }>
-{
-  return callRpc('app_init_user', {
-    p_user_id: userId,
-    p_wallet_address: walletAddress ?? null,
-    p_country_code: countryCode ?? null,
-  }, context);
+export async function initUser(body: InitUserInput): Promise<{ user: {
+  id: string;
+  energy: number;
+  boost_level: number;
+  boost_expires_at: string | null;
+  country_code: string | null;
+} }> {
+  return request('/users/init', { body: JSON.stringify(body) });
 }
 
 export interface BalanceInput {
   userId: string;
-  walletAddress?: string | null;
-  countryCode?: string | null;
 }
 
-export async function getUserBalance(
-  { userId, walletAddress, countryCode }: BalanceInput,
-  context?: RpcContext,
-): Promise<{ energy: number; boost_level: number; multiplier: number; boost_expires_at: string | null; }>
-{
-  return callRpc('app_get_user_balance', {
-    p_user_id: userId,
-    p_wallet_address: walletAddress ?? null,
-    p_country_code: countryCode ?? null,
-  }, context);
+export async function getUserBalance(body: BalanceInput): Promise<{
+  energy: number;
+  boost_level: number;
+  multiplier: number;
+  boost_expires_at: string | null;
+}> {
+  return request('/users/balance', { body: JSON.stringify(body) });
 }
 
 export interface CompleteAdInput {
   userId: string;
   adId: string;
-  walletAddress?: string | null;
-  countryCode?: string | null;
 }
 
-export async function completeAdWatch(
-  { userId, adId, walletAddress, countryCode }: CompleteAdInput,
-  context?: RpcContext,
-): Promise<AdCompleteResponse>
-{
-  return callRpc('app_complete_ad_watch', {
-    p_user_id: userId,
-    p_ad_id: adId,
-    p_wallet_address: walletAddress ?? null,
-    p_country_code: countryCode ?? null,
-  }, context);
+export async function completeAdWatch(body: CompleteAdInput): Promise<AdCompleteResponse> {
+  return request('/ads/complete', { body: JSON.stringify(body) });
 }
 
 export interface CreateOrderInput {
   userId: string;
   boostLevel: number;
-  walletAddress?: string | null;
-  countryCode?: string | null;
 }
 
-export async function createOrder(
-  { userId, boostLevel, walletAddress, countryCode }: CreateOrderInput,
-  context?: RpcContext,
-): Promise<{ order_id: string; address: string; amount: number; payload: string; boost_name: string; duration_days: number; }>
-{
-  return callRpc('app_create_order', {
-    p_user_id: userId,
-    p_boost_level: boostLevel,
-    p_wallet_address: walletAddress ?? null,
-    p_country_code: countryCode ?? null,
-  }, context);
+export async function createOrder(body: CreateOrderInput): Promise<{
+  order_id: string;
+  address: string;
+  amount: number;
+  payload: string;
+  boost_name: string;
+  duration_days: number;
+}> {
+  return request('/orders', { body: JSON.stringify(body) });
 }
 
 export interface ConfirmOrderInput {
@@ -115,16 +89,13 @@ export interface ConfirmOrderInput {
   txHash?: string | null;
 }
 
-export async function confirmOrder(
-  { userId, orderId, txHash }: ConfirmOrderInput,
-  context?: RpcContext,
-): Promise<{ success: boolean; boost_level: number; boost_expires_at: string | null; multiplier: number; }>
-{
-  return callRpc('app_confirm_order', {
-    p_user_id: userId,
-    p_order_id: orderId,
-    p_tx_hash: txHash ?? null,
-  }, context);
+export async function confirmOrder(body: ConfirmOrderInput): Promise<{
+  success: boolean;
+  boost_level: number;
+  boost_expires_at: string | null;
+  multiplier: number;
+}> {
+  return request('/orders/confirm', { body: JSON.stringify(body) });
 }
 
 export interface RegisterTonPaymentInput {
@@ -135,66 +106,12 @@ export interface RegisterTonPaymentInput {
   status?: string;
 }
 
-export async function registerTonPayment(
-  { orderId, wallet, amount, boc, status }: RegisterTonPaymentInput,
-  context?: RpcContext,
-): Promise<{ success: boolean; order_id: string; status: string }>
-{
-  return callRpc('app_register_ton_payment', {
-    p_order_id: orderId,
-    p_wallet: wallet,
-    p_amount: amount,
-    p_boc: boc,
-    p_status: status ?? null,
-  }, context);
-}
-
-export interface StatsInput {
-  userId: string;
-}
-
-export async function getUserStats(
-  { userId }: StatsInput,
-  context?: RpcContext,
-): Promise<UserStatsResponse>
-{
-  return callRpc('app_get_stats', {
-    p_user_id: userId,
-  }, context);
-}
-
-export interface RewardStatusInput {
-  userId: string;
-}
-
-export async function getRewardStatus(
-  { userId }: RewardStatusInput,
-  context?: RpcContext,
-): Promise<RewardStatusResponse>
-{
-  return callRpc('app_get_reward_status', {
-    p_user_id: userId,
-  }, context);
-}
-
-export interface ClaimRewardInput {
-  userId: string;
-  partnerId: string;
-  rewardAmount: number;
-  partnerName: string;
-}
-
-export async function claimReward(
-  { userId, partnerId, rewardAmount, partnerName }: ClaimRewardInput,
-  context?: RpcContext,
-): Promise<ClaimRewardResponse>
-{
-  return callRpc('app_claim_reward', {
-    p_user_id: userId,
-    p_partner_id: partnerId,
-    p_reward: rewardAmount,
-    p_partner_name: partnerName,
-  }, context);
+export async function registerTonPayment(body: RegisterTonPaymentInput): Promise<{
+  success: boolean;
+  order_id: string;
+  status: string;
+}> {
+  return request('/orders/register-payment', { body: JSON.stringify(body) });
 }
 
 export interface RetryPaymentInput {
@@ -202,15 +119,8 @@ export interface RetryPaymentInput {
   orderId: string;
 }
 
-export async function retryPayment(
-  { userId, orderId }: RetryPaymentInput,
-  context?: RpcContext,
-): Promise<RetryPaymentResponse>
-{
-  return callRpc('app_retry_ton_payment', {
-    p_user_id: userId,
-    p_order_id: orderId,
-  }, context);
+export async function retryPayment(body: RetryPaymentInput): Promise<RetryPaymentResponse> {
+  return request('/orders/retry-payment', { body: JSON.stringify(body) });
 }
 
 export interface PaymentStatusInput {
@@ -218,13 +128,74 @@ export interface PaymentStatusInput {
   orderId: string;
 }
 
-export async function getPaymentStatus(
-  { userId, orderId }: PaymentStatusInput,
-  context?: RpcContext,
-): Promise<PaymentStatusResponse>
-{
-  return callRpc('app_get_payment_status', {
-    p_user_id: userId,
-    p_order_id: orderId,
-  }, context);
+export async function getPaymentStatus(body: PaymentStatusInput): Promise<PaymentStatusResponse> {
+  return request('/orders/status', { body: JSON.stringify(body) });
 }
+
+export interface StatsInput {
+  userId: string;
+}
+
+export async function getUserStats(body: StatsInput): Promise<UserStatsResponse> {
+  return request('/users/stats', { body: JSON.stringify(body) });
+}
+
+export interface RewardStatusInput {
+  userId: string;
+}
+
+export async function getRewardStatus(body: RewardStatusInput): Promise<RewardStatusResponse> {
+  return request('/rewards/status', { body: JSON.stringify(body) });
+}
+
+export interface ClaimRewardInput {
+  userId: string;
+  partnerId: string;
+}
+
+export async function claimReward(body: ClaimRewardInput): Promise<ClaimRewardResponse> {
+  return request('/rewards/claim', { body: JSON.stringify(body) });
+}
+
+export interface CreateUserRequest {
+  userId: string;
+  walletAddress?: string | null;
+  countryCode?: string | null;
+}
+
+export async function createUser(body: CreateUserRequest) {
+  const response = await fetch(`${API_BASE}/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    credentials: 'same-origin',
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = typeof data?.error === 'string' ? data.error : 'Failed to create user';
+    throw new Error(message);
+  }
+
+  return data as {
+    id: string;
+    energy: number;
+    boost_level: number;
+    boost_expires_at: string | null;
+    country_code: string | null;
+  };
+}
+
+export async function listUsersRequest() {
+  const response = await fetch(`${API_BASE}/users`, { credentials: 'same-origin' });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = typeof data?.error === 'string' ? data.error : 'Failed to load users';
+    throw new Error(message);
+  }
+
+  return data as { users: Array<{ id: string; energy: number; boost_level: number; boost_expires_at: string | null; country_code: string | null; created_at: string }> };
+}
+

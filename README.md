@@ -7,7 +7,7 @@
 ![Version](https://img.shields.io/badge/version-1.0.0-red)
 ![React](https://img.shields.io/badge/React-18+-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue)
-![Supabase](https://img.shields.io/badge/Supabase-Edge%20Functions-green)
+![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose-brightgreen)
 ![TON](https://img.shields.io/badge/TON-Blockchain-blue)
 
 ---
@@ -23,7 +23,7 @@
 - 💰 **Wallet Integration**: Manage balance and transactions
 - 📲 **Mobile-Optimized**: Safe area insets, touch targets, responsive design
 - 🎨 **Dark Futuristic Theme**: Glassmorphic UI with red accents
-- 🔐 **Secure Backend**: Supabase Edge Functions with authentication
+- 🔐 **Secure Backend**: Node middleware + MongoDB (Mongoose models)
 - 🚀 **Production Ready**: Full API, data persistence, and error handling
 - 🔧 **Easy Config**: Simple files for adding partners and ads
 
@@ -31,10 +31,7 @@
 
 ## 🚀 Quick Start
 
-### Option 1: Use in Figma Make
-The app is ready to use immediately in Figma Make with Supabase integration!
-
-### Option 2: Local Development
+### Local Development
 
 ```bash
 # Clone or download the project
@@ -45,7 +42,7 @@ npm install
 
 # Set up environment variables
 cp .env.example .env
-# Edit .env with your Supabase credentials
+# Edit .env with your MongoDB credentials
 
 # Start development
 npm run dev
@@ -80,11 +77,11 @@ npm run dev
 ```
 Frontend (React + TypeScript + Tailwind)
     ↓
-API Layer (Custom Hooks + Supabase RPC)
+API Layer (Custom Hooks + REST fetch helpers)
     ↓
-Backend (Supabase SQL functions)
+Backend (Vite middleware + Mongoose services)
     ↓
-Database (Postgres - app_* tables)
+Database (MongoDB collections)
     ↓
 Blockchain (TON - Future Integration)
 ```
@@ -95,8 +92,8 @@ Blockchain (TON - Future Integration)
 
 ## 📈 Analytics
 
-- `ad_watch_daily_analytics` — aggregated per-user/per-day watch metrics (count, reward, multiplier) sourced from `ad_watch_logs`.
-- Supabase RPC responses (`app_get_stats`) consume the same relational data, keeping dashboards and clients in sync.
+- `watch_logs` — aggregated per-user/per-day watch metrics (count, reward, multiplier) stored in MongoDB.
+- REST responses reuse the same MongoDB data used by analytics widgets, keeping dashboards and clients in sync.
 
 ---
 
@@ -111,10 +108,9 @@ Blockchain (TON - Future Integration)
 - **Shadcn/ui** - Component library
 
 ### Backend
-- **Supabase** - Backend-as-a-Service
-- **Postgres SQL Functions** - Authoritative business logic
-- **pg_cron** - Background processing for TON validation
-- **Materialized analytics view** - Unified watch insights
+- **Node (Vite middleware)** - Lightweight API layer
+- **Mongoose** - ODM for MongoDB
+- **MongoDB** - Persistent storage for users, orders, rewards, and analytics
 
 ### Blockchain
 - **TON** - Payment infrastructure (to be integrated)
@@ -145,7 +141,7 @@ Blockchain (TON - Future Integration)
 
 ## 🔐 Security
 
-- ✅ **Authentication**: Supabase Auth with JWT tokens
+- ✅ **Authentication**: TON Connect session bootstrap + MongoDB persistence
 - ✅ **Anti-Spam**: 30-second cooldown between ads
 - ✅ **Rate Limiting**: 200 ads per user per day
 - ✅ **Atomic Operations**: Prevent race conditions
@@ -172,13 +168,14 @@ Blockchain (TON - Future Integration)
 │   ├── economy.ts            # Economy settings
 │   ├── partners.ts           # Partner rewards config ⭐ NEW
 │   └── ads.ts                # Ad creatives config
-├── supabase/             # Backend code
-│   └── functions/server/
-│       └── index.tsx         # API endpoints (includes rewards API)
+├── server/               # MongoDB data models and API middleware
+│   ├── models/               # Mongoose schemas
+│   └── services/             # Business logic (orders, rewards, stats)
 ├── utils/                # Utility functions
-│   ├── helpers.ts            # Helper functions
-│   ├── telegram.ts           # Telegram Web App utils
-│   └── test-api.ts           # API testing tools
+│   ├── db.ts                # MongoDB connection helper (mongoose)
+│   ├── helpers.ts           # Helper functions
+│   ├── telegram.ts          # Telegram Web App utils
+│   └── test-api.ts          # API testing tools
 ├── types/                # TypeScript types
 ├── App.tsx               # Main app component
 └── styles/               # Global styles
@@ -190,16 +187,10 @@ Blockchain (TON - Future Integration)
 
 ### Manual Testing
 ```bash
-# Open browser console and run:
-await window.testApi.runAllTests()
-```
-
-### API Testing
-```bash
-# Test individual endpoints:
-await window.testApi.testHealth()
+# In the browser console run individual helpers:
 await window.testApi.testUserInit()
-await window.testApi.testCompleteAd('ad_1')
+await window.testApi.testGetBalance()
+await window.testApi.testCompleteAd('ad_demo')
 ```
 
 ### Simulation
@@ -219,8 +210,7 @@ Deploy to any static hosting:
 - **GitHub Pages**: Push to gh-pages branch
 
 ### Backend
-Already deployed on Supabase Edge Functions!
-No additional setup needed.
+MongoDB is accessed directly via the built-in Vite middleware. Ensure `MONGODB_URI` is configured before running the dev server.
 
 ---
 
@@ -298,7 +288,7 @@ Edit `/styles/globals.css` to change brand colors.
 - **Testing Checklist**: [docs/mobile-testing-checklist.md](./docs/mobile-testing-checklist.md) - QA guide
 
 ### API Reference
-- See inline comments in `/supabase/functions/server/index.tsx`
+- See inline comments in `/server/services/userService.ts`
 
 ---
 
@@ -309,7 +299,7 @@ Edit `/styles/globals.css` to change brand colors.
 - [x] User authentication
 - [x] Energy system
 - [x] Basic UI/UX
-- [x] Supabase integration
+- [x] MongoDB integration
 
 ### Phase 2: Boosts 🚧
 - [x] Boost purchase system
@@ -325,7 +315,7 @@ Edit `/styles/globals.css` to change brand colors.
 - [ ] Leaderboards
 
 ### Phase 4: Scale 🔮
-- [ ] Migrate to PostgreSQL
+- [ ] Harden MongoDB indexes & sharding strategy
 - [ ] Add caching layer
 - [ ] Analytics dashboard
 - [ ] Admin panel
@@ -365,7 +355,7 @@ Contributions are welcome! Please:
 - Add email/social authentication
 - Build withdrawal system with Lightning or TON
 - Set up admin dashboard for ad management
-- Add rate limiting via Supabase
+- Add rate limiting at the API middleware level
 
 ---
 
@@ -379,14 +369,14 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 - **Issues**: Open an issue on GitHub
 - **Discussions**: Use GitHub Discussions
-- **Logs**: Check Supabase Dashboard → Logs → Edge Functions
+- **Logs**: Inspect Vite dev server output / cloud logs for middleware
 - **Console**: Browser DevTools (F12) for frontend errors
 
 ---
 
 ## 🌟 Acknowledgments
 
-- Built with [Supabase](https://supabase.com)
+- Backed by [MongoDB](https://www.mongodb.com)
 - UI components from [Shadcn/ui](https://ui.shadcn.com)
 - Icons from [Lucide React](https://lucide.dev)
 - Charts by [Recharts](https://recharts.org)

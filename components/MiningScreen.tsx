@@ -81,7 +81,6 @@ export function MiningScreen() {
     const result = await completeAdRpc({
       userId: user.id,
       adId,
-      walletAddress: user.address,
     });
 
     setIsMining(false);

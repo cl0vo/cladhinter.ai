@@ -1,6 +1,6 @@
 /**
- * SQL API Testing Utility
- * Use this in browser console to invoke Supabase SQL RPC functions directly.
+ * MongoDB API Testing Utility
+ * Use this in browser console to invoke the local Mongo-backed API directly.
  */
 
 import {
@@ -16,61 +16,48 @@ import {
 
 export class ApiTester {
   private userId: string;
-  private walletAddress?: string;
-
-  constructor(userId?: string, walletAddress?: string) {
+  constructor(userId?: string) {
     this.userId = userId || `anon_test_${Date.now()}`;
-    this.walletAddress = walletAddress;
-  }
-
-  setWallet(address: string) {
-    this.walletAddress = address;
   }
 
   async testUserInit() {
-    console.log('👤 Testing app_init_user...');
+    console.log('👤 Testing initUser...');
     const response = await initUser({
       userId: this.userId,
-      walletAddress: this.walletAddress,
     });
     console.log('✅ init response:', response);
     return response;
   }
 
   async testGetBalance() {
-    console.log('💰 Testing app_get_user_balance...');
-    const response = await getUserBalance({
-      userId: this.userId,
-      walletAddress: this.walletAddress,
-    });
+    console.log('💰 Testing getUserBalance...');
+    const response = await getUserBalance({ userId: this.userId });
     console.log('✅ balance:', response);
     return response;
   }
 
   async testCompleteAd(adId = 'test_ad') {
-    console.log(`📺 Testing app_complete_ad_watch (${adId})...`);
+    console.log(`📺 Testing completeAdWatch (${adId})...`);
     const response = await completeAdWatch({
       userId: this.userId,
       adId,
-      walletAddress: this.walletAddress,
     });
     console.log('✅ ad complete:', response);
     return response;
   }
 
   async testCreateOrder(boostLevel = 1) {
-    console.log(`🛒 Testing app_create_order (level ${boostLevel})...`);
+    console.log(`🛒 Testing createOrder (level ${boostLevel})...`);
     const response = await createOrder({
       userId: this.userId,
       boostLevel,
-      walletAddress: this.walletAddress,
     });
     console.log('✅ order created:', response);
     return response;
   }
 
   async testConfirmOrder(orderId: string, txHash?: string) {
-    console.log(`✅ Testing app_confirm_order (${orderId})...`);
+    console.log(`✅ Testing confirmOrder (${orderId})...`);
     const response = await confirmOrder({
       userId: this.userId,
       orderId,
@@ -81,27 +68,22 @@ export class ApiTester {
   }
 
   async testGetStats() {
-    console.log('📊 Testing app_get_stats...');
+    console.log('📊 Testing getUserStats...');
     const response = await getUserStats({ userId: this.userId });
     console.log('✅ stats:', response);
     return response;
   }
 
   async testRewardStatus() {
-    console.log('🎁 Testing app_get_reward_status...');
+    console.log('🎁 Testing getRewardStatus...');
     const response = await getRewardStatus({ userId: this.userId });
     console.log('✅ reward status:', response);
     return response;
   }
 
-  async testClaimReward(partnerId: string, amount: number, partnerName: string) {
-    console.log(`🏆 Testing app_claim_reward (${partnerId})...`);
-    const response = await claimReward({
-      userId: this.userId,
-      partnerId,
-      rewardAmount: amount,
-      partnerName,
-    });
+  async testClaimReward(partnerId: string) {
+    console.log(`🏆 Testing claimReward (${partnerId})...`);
+    const response = await claimReward({ userId: this.userId, partnerId });
     console.log('✅ reward claimed:', response);
     return response;
   }
@@ -112,4 +94,14 @@ export class ApiTester {
       await this.testCompleteAd(`ad_${i + 1}`);
     }
   }
+}
+
+declare global {
+  interface Window {
+    testApi?: ApiTester;
+  }
+}
+
+if (typeof window !== 'undefined' && !window.testApi) {
+  window.testApi = new ApiTester();
 }
