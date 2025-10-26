@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Gift } from 'lucide-react';
-import { AdCreative, adConfig } from '../config/ads';
+import { AdCreative, adConfig } from '@shared/config/ads';
 import { hapticFeedback, openExternalLink } from '../utils/telegram';
 
 interface AdModalProps {

@@ -19,7 +19,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
 import { useTonConnect } from '../hooks/useTonConnect';
-import { BOOSTS, energyToTon } from '../config/economy';
+import { BOOSTS, energyToTon } from '@shared/config/economy';
 import type { PaymentStatusResponse } from '../types';
 
 interface OrderResponse {

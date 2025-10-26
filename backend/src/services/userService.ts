@@ -1,15 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
-import { BOOSTS, DAILY_VIEW_LIMIT, ENERGY_PER_AD, boostMultiplier } from '../../config/economy';
-import { adCreatives } from '../../config/ads';
-import { getActivePartners, getPartnerById } from '../../config/partners';
+import { BOOSTS, DAILY_VIEW_LIMIT, ENERGY_PER_AD, boostMultiplier } from '../../../shared/config/economy';
+import { adCreatives } from '../../../shared/config/ads';
+import { getActivePartners, getPartnerById } from '../../../shared/config/partners';
 import { LedgerModel } from '../models/Ledger';
 import { UserModel } from '../models/User';
 import { WatchLogModel } from '../models/WatchLog';
 import { SessionLogModel } from '../models/SessionLog';
 import { OrderModel, type OrderStatus } from '../models/Order';
 import { RewardClaimModel } from '../models/RewardClaim';
-import { LedgerModel } from '../models/Ledger';
 
 function ensureEntityExists<T>(entity: T | null | undefined, identifier: string): asserts entity is T {
   if (!entity) {
