@@ -54,13 +54,106 @@ function isApiRequest(url?: string | null): boolean {
   return Boolean(url && url.startsWith('/api'));
 }
 
+function getCorsAllowedOrigins(): string[] {
+  const raw = process.env.CORS_ALLOWED_ORIGINS;
+  if (!raw) {
+    return ['*'];
+  }
+
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+  for (const allowed of allowedOrigins) {
+    if (allowed === '*') {
+      return true;
+    }
+
+    if (allowed === origin) {
+      return true;
+    }
+
+    try {
+      const parsed = new URL(origin);
+      if (allowed === parsed.origin || allowed === parsed.host) {
+        return true;
+      }
+    } catch (error) {
+      if (allowed === origin) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function applyCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  allowedOrigins: string[],
+): boolean {
+  const originHeader = req.headers.origin;
+  const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
+
+  if (origin) {
+    const trimmedOrigin = origin.trim();
+    if (!isOriginAllowed(trimmedOrigin, allowedOrigins)) {
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Origin not allowed' }));
+      return true;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', trimmedOrigin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    const requestedHeaders = req.headers['access-control-request-headers'];
+    if (requestedHeaders) {
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        Array.isArray(requestedHeaders)
+          ? requestedHeaders.join(', ')
+          : requestedHeaders,
+      );
+    } else {
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Max-Age', '86400');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return true;
+    }
+  } else if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.end();
+    return true;
+  }
+
+  return false;
+}
+
 type NextFunction = () => void;
 type Middleware = (req: IncomingMessage, res: ServerResponse, next: NextFunction) => void | Promise<void>;
 
 export function createApiMiddleware(): Middleware {
+  const corsAllowedOrigins = getCorsAllowedOrigins();
+
   return async (req: IncomingMessage, res: ServerResponse, next: NextFunction) => {
     if (!isApiRequest(req.url)) {
       next();
+      return;
+    }
+
+    if (applyCors(req, res, corsAllowedOrigins)) {
       return;
     }
 

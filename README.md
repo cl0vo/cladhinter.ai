@@ -99,6 +99,7 @@ React components/hooks  →  fetch helpers (/api/*)  →  Backend routes  →  P
 | `TON_MAINNET_RPC` | TON RPC endpoint used to verify wallet state. |
 | `VITE_TON_MANIFEST` | URL to the TON Connect manifest for the frontend. |
 | `VITE_BACKEND_URL` | Override proxy target for the frontend dev/preview servers. |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated list of origins allowed to call the backend API. |
 
 ---
 
