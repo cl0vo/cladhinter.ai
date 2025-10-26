@@ -1,4 +1,7 @@
-import { Schema, model, models, type Document } from 'mongoose';
+import mongoose from 'mongoose';
+import type { Document } from 'mongoose';
+
+const { Schema, model, models } = mongoose;
 
 export interface UserDocument extends Document {
   _id: string;
