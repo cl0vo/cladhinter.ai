@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-import { closeMongoClient, disconnectFromDatabase, getMongoDb } from '../server/mongo';
+import { closeMongoClient, disconnectFromDatabase, getMongoDb } from '../src/mongo';
 
 async function createIndexes() {
   const db = await getMongoDb();

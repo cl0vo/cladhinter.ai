@@ -10,8 +10,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
 import { useTonConnect } from '../hooks/useTonConnect';
-import { boostMultiplier } from '../config/economy';
-import { getRandomAd, type AdCreative } from '../config/ads';
+import { boostMultiplier } from '@shared/config/economy';
+import { getRandomAd, type AdCreative } from '@shared/config/ads';
 import { TonConnectButton } from './TonConnectButton';
 
 export function MiningScreen() {

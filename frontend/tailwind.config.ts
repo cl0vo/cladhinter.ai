@@ -7,7 +7,7 @@ const config: Config = {
     './index.html',
     './App.tsx',
     './components/**/*.{ts,tsx}',
-    './config/**/*.{ts,tsx}',
+    '../shared/config/**/*.{ts,tsx}',
     './hooks/**/*.{ts,tsx}',
     './types/**/*.{ts,tsx}',
     './utils/**/*.{ts,tsx}',

@@ -12,17 +12,20 @@
     "skipLibCheck": true,
     "strict": true,
     "jsx": "react-jsx",
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"],
+      "@shared/*": ["../shared/*"]
+    }
   },
   "include": [
     "App.tsx",
     "components",
-    "config",
     "hooks",
-    "server",
     "styles",
     "types",
     "utils",
+    "tests",
     "src"
   ],
   "exclude": ["dist", "node_modules"]

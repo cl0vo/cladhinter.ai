@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { GlassCard } from './GlassCard';
 import { Gift, ExternalLink, Check } from 'lucide-react';
 import { toast } from 'sonner';
-import { getActivePartners, platformConfig, type PartnerReward } from '../config/partners';
+import { getActivePartners, platformConfig, type PartnerReward } from '@shared/config/partners';
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
 import type { ClaimRewardResponse, RewardStatusResponse } from '../types';

@@ -8,29 +8,29 @@ const userFindByIdMock = vi.fn();
 const watchLogCreateMock = vi.fn();
 const ledgerCreateMock = vi.fn();
 
-vi.mock('../server/mongo', () => ({
+vi.mock('../../backend/src/mongo', () => ({
   connectToDatabase: connectToDatabaseMock,
 }));
 
-vi.mock('../server/models/User', () => ({
+vi.mock('../../backend/src/models/User', () => ({
   UserModel: {
     findById: userFindByIdMock,
   },
 }));
 
-vi.mock('../server/models/WatchLog', () => ({
+vi.mock('../../backend/src/models/WatchLog', () => ({
   WatchLogModel: {
     create: watchLogCreateMock,
   },
 }));
 
-vi.mock('../server/models/Ledger', () => ({
+vi.mock('../../backend/src/models/Ledger', () => ({
   LedgerModel: {
     create: ledgerCreateMock,
   },
 }));
 
-const { createApiMiddleware } = await import('../server/routes');
+const { createApiMiddleware } = await import('../../backend/src/routes');
 
 async function closeServer(server: http.Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {

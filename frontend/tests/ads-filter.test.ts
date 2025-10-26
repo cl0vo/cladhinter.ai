@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adCreatives, getEligibleAds } from '../config/ads';
+import { adCreatives, getEligibleAds } from '@shared/config/ads';
 
 const adIds = (ads: typeof adCreatives) => ads.map((ad) => ad.id);
 
