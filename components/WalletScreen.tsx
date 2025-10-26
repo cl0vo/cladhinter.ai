@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { GlassCard } from './GlassCard';
 import { Button } from './ui/button';
 import { TonConnectButton } from './TonConnectButton';
@@ -44,12 +44,41 @@ const isValidTonPayload = (value: string | undefined | null): value is string =>
   return typeof value === 'string' && value.length > 0 && BASE64_PAYLOAD_REGEX.test(value);
 };
 
-const transactions = [
-  { type: 'withdrawal', amount: '-20', label: 'WITHDRAWAL', time: '2 days ago' },
-  { type: 'bonus', amount: '+10', label: 'DAILY BONUS', time: '3 days ago' },
-  { type: 'referral', amount: '+5', label: 'REFERRAL REWARD', time: '5 days ago' },
-  { type: 'mining', amount: '+15.5', label: 'MINING SESSION', time: '1 week ago' },
-];
+function resolveLedgerLabel(entry: LedgerHistoryEntry): string {
+  const metadata = entry.metadata;
+
+  if (metadata && typeof metadata === 'object') {
+    const record = metadata as Record<string, unknown>;
+    const possibleKeys = ['label', 'title', 'reason', 'source', 'type'];
+
+    for (const key of possibleKeys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim().toUpperCase();
+      }
+    }
+  }
+
+  return entry.type === 'debit' ? 'DEBIT' : 'CREDIT';
+}
+
+function resolveLedgerDetail(entry: LedgerHistoryEntry): string | null {
+  const metadata = entry.metadata;
+
+  if (metadata && typeof metadata === 'object') {
+    const record = metadata as Record<string, unknown>;
+    const possibleKeys = ['description', 'note', 'details'];
+
+    for (const key of possibleKeys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+
+  return null;
+}
 
 export function WalletScreen() {
   const { user } = useAuth();
@@ -73,6 +102,57 @@ export function WalletScreen() {
   const balance = userData?.energy || 0;
   const balanceInTon = energyToTon(balance);
   const currentBoostLevel = userData?.boost_level || 0;
+
+  const loadLedgerHistory = useCallback(async () => {
+    if (!user) {
+      setTransactions([]);
+      setHistoryError(null);
+      setIsHistoryLoading(false);
+      return;
+    }
+
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+
+    try {
+      const response = await getLedgerHistoryRpc({
+        userId: user.id,
+        page: 1,
+        limit: 25,
+      });
+
+      if (response) {
+        setTransactions(response.entries);
+      } else {
+        setHistoryError('Failed to load transactions');
+      }
+    } catch (error) {
+      console.error('Failed to fetch ledger history:', error);
+      setHistoryError('Failed to load transactions');
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, [user, getLedgerHistoryRpc]);
+
+  useEffect(() => {
+    void loadLedgerHistory();
+  }, [loadLedgerHistory]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleRefresh = () => {
+      void loadLedgerHistory();
+    };
+
+    window.addEventListener('ledger-history:refresh', handleRefresh);
+
+    return () => {
+      window.removeEventListener('ledger-history:refresh', handleRefresh);
+    };
+  }, [loadLedgerHistory]);
 
   const handleCopyAddress = async () => {
     if (!wallet) {
@@ -489,26 +569,70 @@ export function WalletScreen() {
       <div className="mb-4">
         <p className="text-white/60 text-xs uppercase tracking-wider mb-3">TRANSACTIONS</p>
         <div className="space-y-2 max-h-[180px] overflow-y-auto">
-          {transactions.map((tx, idx) => (
-            <GlassCard key={idx} className="p-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {tx.type === 'withdrawal' ? (
-                    <ArrowDownToLine size={14} className="text-white/40 flex-shrink-0" />
-                  ) : (
-                    <ArrowUpFromLine size={14} className="text-[#FF0033] flex-shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <p className={`${tx.type === 'withdrawal' ? 'text-white/60' : 'text-[#FF0033]'}`}>
-                      {tx.amount} 🆑
-                    </p>
-                    <p className="text-[10px] text-white/50 uppercase truncate">{tx.label}</p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-white/40 flex-shrink-0">{tx.time}</p>
-              </div>
+          {isHistoryLoading ? (
+            <GlassCard className="p-3">
+              <p className="text-center text-white/50 text-xs uppercase tracking-wide">Loading transactions...</p>
             </GlassCard>
-          ))}
+          ) : historyError ? (
+            <GlassCard className="p-3">
+              <p className="text-center text-[#FF0033] text-xs uppercase tracking-wide">{historyError}</p>
+            </GlassCard>
+          ) : transactions.length === 0 ? (
+            <GlassCard className="p-3">
+              <p className="text-center text-white/40 text-xs uppercase tracking-wide">
+                {user ? 'No transactions yet' : 'Connect wallet to view transactions'}
+              </p>
+            </GlassCard>
+          ) : (
+            transactions.map((tx) => {
+              const amountPrefix = tx.type === 'debit' ? '-' : '+';
+              const absoluteAmount = Math.abs(tx.amount);
+              const formattedAmount = `${amountPrefix}${absoluteAmount.toLocaleString(undefined, {
+                minimumFractionDigits: Number.isInteger(absoluteAmount) ? 0 : 2,
+                maximumFractionDigits: 4,
+              })}`;
+              const label = resolveLedgerLabel(tx);
+              const detail = resolveLedgerDetail(tx);
+              const timestamp = new Date(tx.created_at);
+              const currencyLabel = tx.currency ? tx.currency.toUpperCase() : '';
+              const timeLabel = Number.isNaN(timestamp.getTime())
+                ? ''
+                : timestamp.toLocaleString(undefined, {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+              return (
+                <GlassCard key={tx.id} className="p-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {tx.type === 'debit' ? (
+                        <ArrowDownToLine size={14} className="text-white/40 flex-shrink-0" />
+                      ) : (
+                        <ArrowUpFromLine size={14} className="text-[#FF0033] flex-shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className={`${tx.type === 'debit' ? 'text-white/60' : 'text-[#FF0033]'}`}>
+                          {formattedAmount} {currencyLabel}
+                        </p>
+                        <p className="text-[10px] text-white/50 uppercase truncate">{label}</p>
+                        {detail && (
+                          <p className="text-[9px] text-white/40 truncate">{detail}</p>
+                        )}
+                      </div>
+                    </div>
+                    {timeLabel && (
+                      <p className="text-[10px] text-white/40 flex-shrink-0 text-right leading-tight">
+                        {timeLabel}
+                      </p>
+                    )}
+                  </div>
+                </GlassCard>
+              );
+            })
+          )}
         </div>
       </div>
 

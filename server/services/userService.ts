@@ -3,16 +3,50 @@ import { randomUUID } from 'node:crypto';
 import { BOOSTS, DAILY_VIEW_LIMIT, ENERGY_PER_AD, boostMultiplier } from '../../config/economy';
 import { adCreatives } from '../../config/ads';
 import { getActivePartners, getPartnerById } from '../../config/partners';
+import { LedgerModel } from '../models/Ledger';
 import { UserModel } from '../models/User';
 import { WatchLogModel } from '../models/WatchLog';
 import { SessionLogModel } from '../models/SessionLog';
 import { OrderModel, type OrderStatus } from '../models/Order';
 import { RewardClaimModel } from '../models/RewardClaim';
+import { LedgerModel } from '../models/Ledger';
 
 function ensureEntityExists<T>(entity: T | null | undefined, identifier: string): asserts entity is T {
   if (!entity) {
     throw new Error(`${identifier} not found`);
   }
+}
+
+function resolveUserWallet(
+  user: { wallet?: string | null; walletAddress?: string | null } | null | undefined,
+  fallback?: string | null,
+): string {
+  return user?.wallet ?? user?.walletAddress ?? fallback ?? '';
+}
+
+async function recordLedgerEntry({
+  userId,
+  wallet,
+  amount,
+  type,
+  metadata,
+  idemKey,
+}: {
+  userId: string;
+  wallet: string | null | undefined;
+  amount: number;
+  type: 'credit' | 'debit';
+  metadata?: Record<string, unknown> | null;
+  idemKey: string;
+}) {
+  await LedgerModel.create({
+    userId,
+    wallet: wallet ?? '',
+    amount,
+    type,
+    idemKey,
+    metadata: metadata ?? null,
+  });
 }
 
 function getAdBaseReward(adId: string): number {
@@ -142,13 +176,25 @@ export async function completeAdWatch({
 
   await user.save();
 
-  await WatchLogModel.create({
+  const watchLog = await WatchLogModel.create({
     userId,
     adId,
     reward,
     baseReward,
     multiplier,
     countryCode: user.countryCode ?? null,
+  });
+
+  await recordLedgerEntry({
+    userId,
+    wallet: resolveUserWallet(user),
+    amount: reward,
+    type: 'credit',
+    metadata: {
+      adId,
+      watchLogId: String(watchLog._id),
+    },
+    idemKey: `ad:${String(watchLog._id)}`,
   });
 
   const dailyRemaining = Math.max(DAILY_VIEW_LIMIT - user.dailyWatchCount, 0);
@@ -239,6 +285,19 @@ export async function confirmOrder({
 
   await user.save();
 
+  await recordLedgerEntry({
+    userId,
+    wallet: resolveUserWallet(user),
+    amount: order.tonAmount,
+    type: 'debit',
+    metadata: {
+      orderId: order._id,
+      txHash: order.txHash ?? null,
+      boostLevel: order.boostLevel,
+    },
+    idemKey: `order:confirm:${order._id}`,
+  });
+
   return {
     success: true,
     boost_level: user.boostLevel,
@@ -276,6 +335,21 @@ export async function registerTonPayment({
   order.verificationError = null;
 
   await order.save();
+
+  const user = await UserModel.findById(order.userId);
+
+  await recordLedgerEntry({
+    userId: order.userId,
+    wallet: resolveUserWallet(user, wallet),
+    amount,
+    type: 'debit',
+    metadata: {
+      orderId: order._id,
+      boc,
+      status: order.status,
+    },
+    idemKey: `order:payment:${order._id}:${order.verificationAttempts}`,
+  });
 
   return {
     success: true,
@@ -447,11 +521,24 @@ export async function claimReward({
 
   await user.save();
 
-  await RewardClaimModel.create({
+  const rewardClaim = await RewardClaimModel.create({
     userId,
     partnerId,
     reward: partner.reward,
     partnerName: partner.name,
+  });
+
+  await recordLedgerEntry({
+    userId,
+    wallet: resolveUserWallet(user),
+    amount: partner.reward,
+    type: 'credit',
+    metadata: {
+      partnerId,
+      partnerName: partner.name,
+      rewardClaimId: String(rewardClaim._id),
+    },
+    idemKey: `reward:${String(rewardClaim._id)}`,
   });
 
   return {
@@ -459,6 +546,55 @@ export async function claimReward({
     reward: partner.reward,
     new_balance: user.energy,
     partner_name: partner.name,
+  };
+}
+
+export async function getLedgerHistory({
+  userId,
+  page = 1,
+  limit = 20,
+}: {
+  userId: string;
+  page?: number;
+  limit?: number;
+}) {
+  const user = await UserModel.findById(userId);
+  ensureEntityExists(user, `User ${userId}`);
+
+  const requestedPage = Number(page);
+  const requestedLimit = Number(limit);
+  const normalizedPage = Number.isFinite(requestedPage) ? Math.max(1, Math.floor(requestedPage)) : 1;
+  const normalizedLimit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.floor(requestedLimit), 1), 100)
+    : 20;
+  const skip = (normalizedPage - 1) * normalizedLimit;
+
+  const [entries, total] = await Promise.all([
+    LedgerModel.find({ userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(normalizedLimit)
+      .lean(),
+    LedgerModel.countDocuments({ userId }),
+  ]);
+
+  return {
+    entries: entries.map((entry) => ({
+      id: String(entry._id),
+      user_id: entry.userId,
+      wallet: entry.wallet,
+      amount: entry.amount,
+      currency: entry.currency,
+      type: entry.type,
+      metadata: entry.metadata ?? null,
+      created_at: entry.createdAt.toISOString(),
+    })),
+    pagination: {
+      page: normalizedPage,
+      limit: normalizedLimit,
+      total,
+      has_next: skip + entries.length < total,
+    },
   };
 }
 

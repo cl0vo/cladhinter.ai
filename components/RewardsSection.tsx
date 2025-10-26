@@ -86,6 +86,10 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           );
           hapticFeedback('notification', 'success');
 
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('ledger-history:refresh'));
+          }
+
           // Refresh balance via callback
           if (onRewardClaimed) {
             onRewardClaimed();

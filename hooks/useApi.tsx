@@ -58,6 +58,7 @@ export function useApi() {
     getUserStats: (input: StatsInput) => execute(() => getUserStats(input)),
     getRewardStatus: (input: RewardStatusInput) => execute(() => getRewardStatus(input)),
     claimReward: (input: ClaimRewardInput) => execute(() => claimReward(input)),
+    getLedgerHistory: (input: LedgerHistoryRequest) => execute(() => getLedgerHistory(input)),
   }), [execute]);
 
   return {
