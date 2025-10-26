@@ -218,6 +218,10 @@ The dev middleware automatically connects to MongoDB through `server/mongo.ts`, 
 | `NEXT_PUBLIC_TON_APP_NAME` | Public identifier shown in TON Connect. |
 | `VERCEL_ENV` | Optional deployment stage flag for logging. |
 | `VITE_TON_MANIFEST` | Optional override for the TonConnect manifest URL. |
+| `SERVER_HMAC_SECRET` | Secret used to HMAC wallet proof nonces before persisting sessions. |
+| `TON_PROOF_ALLOWED_DOMAINS` | Comma separated list of allowed TON proof domains (defaults to `localhost:5173,ton-connect.github.io`). |
+| `TON_MAINNET_RPC` | Optional override for the TON mainnet RPC endpoint used to validate proofs. |
+| `WALLET_PROOF_TTL_SECONDS` | Lifetime (in seconds) for wallet proof sessions and timestamps (defaults to 900). |
 
 ### Frontend
 Deploy to any static hosting:
@@ -236,6 +240,24 @@ MongoDB is accessed directly via the built-in Vite middleware. Ensure both `MONG
   - `sessions`: TTL index on `{ ttl: 1 }` so ephemeral sessions expire automatically.
 
 Re-run the script after deploying new environments or when restoring from a backup to guarantee the indexes are present.
+
+---
+
+## 🔐 Wallet auth flow
+
+The TON wallet proof flow is implemented with two API endpoints that work together to issue a nonce, persist it in MongoDB with a TTL, and validate the signed payload returned by TonConnect-compatible wallets.
+
+1. **Start the proof** – `POST /api/wallet/proof/start`
+   - Body (optional): `{ "userId": "<app-user-id>", "wallet": "<expected-address>" }`.
+   - Response: `{ "nonce": "...", "expiresAt": "<ISO date>" }`.
+   - The server creates a session document in the `sessions` collection with an HMAC-hashed nonce and a TTL derived from `WALLET_PROOF_TTL_SECONDS`. Passing `userId` ties the session to an existing user record; otherwise the wallet address becomes the identifier on success.
+
+2. **Finish the proof** – `POST /api/wallet/proof/finish`
+   - Body: `{ "address": "EQ...", "rawAddress": "0:...", "chain": "ton-mainnet", "publicKey": "<hex>", "nonce": "...", "userId": "optional", "proof": { "timestamp": 0, "domain": { "lengthBytes": 0, "value": "app.domain" }, "payload": "...", "signature": "...", "state_init": "<boc>" } }`.
+   - The server verifies that the provided payload matches an active session, validates the TON proof signature against the mainnet endpoint defined by `TON_MAINNET_RPC`, and upserts the `users` record (`wallet`, `walletVerified`, `lastSeenAt`).
+   - Response: `{ "success": true, "userId": "<resolved-id>", "wallet": "<friendly-address>" }`. JSON errors are returned when the nonce, domain, or signature is invalid.
+
+Client integrations should store the returned `userId` and `accessToken` (if issued later) to drive authenticated requests. Always call `/api/wallet/proof/start` to obtain a fresh nonce before invoking the TonConnect modal; expired sessions automatically purge thanks to the MongoDB TTL index.
 
 ---
 

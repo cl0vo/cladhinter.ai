@@ -11,6 +11,7 @@ export interface TonWalletProof {
   };
   payload: string;
   signature: string;
+  state_init?: string;
 }
 
 export interface TonWallet {

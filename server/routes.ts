@@ -17,6 +17,11 @@ import {
   retryPayment,
   confirmOrder,
 } from './services/userService';
+import {
+  finishWalletProofSession,
+  startWalletProofSession,
+  type WalletProofFinishInput,
+} from './services/walletProofService';
 
 async function readJsonBody<T = any>(req: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
@@ -97,6 +102,34 @@ export function createApiMiddleware(): Middleware {
       if (req.method === 'POST' && pathname === '/api/users/init') {
         const body = await readJsonBody(req);
         const result = await initUser(body);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/wallet/proof/start') {
+        const body = await readJsonBody<{ userId?: string | null; wallet?: string | null }>(req);
+        const result = await startWalletProofSession({
+          userId: body?.userId ?? null,
+          wallet: body?.wallet ?? null,
+        });
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (req.method === 'POST' && pathname === '/api/wallet/proof/finish') {
+        const body = await readJsonBody<WalletProofFinishInput>(req);
+
+        if (!body?.address || !body?.chain || !body?.publicKey || !body?.nonce) {
+          sendJson(res, 400, { error: 'Invalid wallet proof request' });
+          return;
+        }
+
+        if (!body.proof?.payload || !body.proof?.signature || !body.proof?.domain) {
+          sendJson(res, 400, { error: 'Invalid wallet proof payload' });
+          return;
+        }
+
+        const result = await finishWalletProofSession(body);
         sendJson(res, 200, result);
         return;
       }
