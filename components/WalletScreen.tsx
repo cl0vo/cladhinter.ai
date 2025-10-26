@@ -2,14 +2,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { GlassCard } from './GlassCard';
 import { Button } from './ui/button';
 import { TonConnectButton } from './TonConnectButton';
-import { Copy, Share2, Zap, TrendingUp, Shield, ArrowDownToLine, ArrowUpFromLine, CheckCircle2 } from 'lucide-react';
+import {
+  Copy,
+  Share2,
+  Zap,
+  TrendingUp,
+  Shield,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  CheckCircle2,
+  RefreshCcw,
+  RotateCcw,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
 import { useTonConnect } from '../hooks/useTonConnect';
 import { BOOSTS, energyToTon } from '../config/economy';
-import type { LedgerHistoryEntry } from '../utils/api/sqlClient';
+import type { PaymentStatusResponse } from '../types';
 
 interface OrderResponse {
   order_id: string;
@@ -75,16 +86,18 @@ export function WalletScreen() {
   const {
     createOrder: createOrderRpc,
     confirmOrder: confirmOrderRpc,
-    getLedgerHistory: getLedgerHistoryRpc,
+    registerTonPayment: registerTonPaymentRpc,
+    getPaymentStatus: getPaymentStatusRpc,
+    retryPayment: retryPaymentRpc,
   } = useApi();
   const { sendTransaction, isConnected, wallet, connect } = useTonConnect();
 
   const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
   const [isSendingTx, setIsSendingTx] = useState(false);
-  const [transactions, setTransactions] = useState<LedgerHistoryEntry[]>([]);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatusResponse | null>(null);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [isRetryingVerification, setIsRetryingVerification] = useState(false);
 
   const balance = userData?.energy || 0;
   const balanceInTon = energyToTon(balance);
@@ -168,6 +181,55 @@ export function WalletScreen() {
     toast.success('Referral link copied!');
   };
 
+  const fetchPaymentStatus = async (orderId: string) => {
+    if (!user) {
+      return null;
+    }
+
+    setIsCheckingStatus(true);
+    try {
+      const status = await getPaymentStatusRpc({
+        userId: user.id,
+        orderId,
+      });
+
+      if (status) {
+        setPaymentStatus(status);
+      } else {
+        toast.error('Unable to load TON payment status.');
+      }
+
+      return status;
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  const handleRetryVerification = async () => {
+    if (!user) return;
+
+    const orderId = paymentStatus?.order_id ?? pendingOrder?.order_id;
+    if (!orderId) return;
+
+    setIsRetryingVerification(true);
+    try {
+      const result = await retryPaymentRpc({
+        userId: user.id,
+        orderId,
+      });
+
+      if (result) {
+        toast.success('Re-checking TON payment status...');
+      } else {
+        toast.error('Unable to trigger TON payment verification.');
+      }
+
+      await fetchPaymentStatus(orderId);
+    } finally {
+      setIsRetryingVerification(false);
+    }
+  };
+
   const handleBuyBoost = async (boostLevel: number) => {
     if (processingBoost !== null) return;
 
@@ -187,7 +249,14 @@ export function WalletScreen() {
       return;
     }
 
+    if (!wallet) {
+      toast.error('Wallet connection is not available. Please reconnect.');
+      return;
+    }
+
     setProcessingBoost(boostLevel);
+    setPaymentStatus(null);
+    setPendingOrder(null);
 
     try {
       // Create order on server
@@ -218,6 +287,22 @@ export function WalletScreen() {
         if (txResult) {
           toast.success('Transaction sent! Confirming boost...');
 
+          const registered = await registerTonPaymentRpc({
+            orderId: orderData.order_id,
+            wallet: wallet.rawAddress || wallet.address,
+            amount: orderData.amount,
+            boc: txResult.boc,
+          });
+
+          if (!registered) {
+            toast.error('Unable to register TON payment. You can retry verification from the pending payment section.');
+            setPendingOrder(orderData);
+            return;
+          }
+
+          setPendingOrder(orderData);
+          await fetchPaymentStatus(orderData.order_id);
+
           // Confirm payment on server
           const result = await confirmOrderRpc({
             userId: user.id,
@@ -228,7 +313,11 @@ export function WalletScreen() {
           if (result) {
             toast.success(`${orderData.boost_name} boost activated! x${result.multiplier} multiplier`);
             await refreshBalance();
-            await loadLedgerHistory();
+
+            const statusAfterConfirm = await fetchPaymentStatus(orderData.order_id);
+            if (statusAfterConfirm?.status === 'paid') {
+              setPendingOrder(null);
+            }
           }
         }
       } catch (txError) {
@@ -249,16 +338,22 @@ export function WalletScreen() {
   const handleConfirmPayment = async () => {
     if (!user || !pendingOrder) return;
 
+    const orderId = pendingOrder.order_id;
+
     const result = await confirmOrderRpc({
       userId: user.id,
-      orderId: pendingOrder.order_id,
+      orderId,
     });
 
     if (result) {
       toast.success(`${pendingOrder.boost_name} boost activated! x${result.multiplier} multiplier`);
       setPendingOrder(null);
       await refreshBalance();
-      await loadLedgerHistory();
+
+      const status = await fetchPaymentStatus(orderId);
+      if (!status) {
+        setPaymentStatus(null);
+      }
     }
   };
 
@@ -320,12 +415,74 @@ export function WalletScreen() {
           <p className="text-white/50 text-xs mb-3">
             Payload: {pendingOrder.payload}
           </p>
-          <Button
-            onClick={handleConfirmPayment}
-            className="w-full bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px]"
-          >
-            I HAVE SENT THE PAYMENT
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button
+              onClick={handleConfirmPayment}
+              className="w-full bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px]"
+            >
+              I HAVE SENT THE PAYMENT
+            </Button>
+            <Button
+              onClick={handleRetryVerification}
+              disabled={isRetryingVerification}
+              className="w-full bg-white/10 hover:bg-white/20 text-white uppercase tracking-wider min-h-[48px]"
+            >
+              <RotateCcw size={14} className="mr-2" />
+              {isRetryingVerification ? 'RETRYING...' : 'RETRY VERIFICATION'}
+            </Button>
+          </div>
+        </GlassCard>
+      )}
+
+      {paymentStatus && (
+        <GlassCard className="p-4 mb-5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <p className="text-white/80 uppercase tracking-wider text-sm">PAYMENT STATUS</p>
+            <Button
+              variant="ghost"
+              onClick={() => fetchPaymentStatus(paymentStatus.order_id)}
+              disabled={isCheckingStatus}
+              className="h-8 px-2 text-white/70 hover:text-white"
+            >
+              <RefreshCcw size={14} className="mr-2" />
+              {isCheckingStatus ? 'REFRESHING...' : 'REFRESH'}
+            </Button>
+          </div>
+          <div className="space-y-1 text-xs text-white/70">
+            <p>
+              Status: <span className="text-white">{paymentStatus.status.split('_').join(' ').toUpperCase()}</span>
+            </p>
+            {paymentStatus.paid_at && <p>Paid at: {new Date(paymentStatus.paid_at).toLocaleString()}</p>}
+            {paymentStatus.tx_hash && <p>TX Hash: {paymentStatus.tx_hash}</p>}
+            {paymentStatus.tx_lt && <p>TX LT: {paymentStatus.tx_lt}</p>}
+            {paymentStatus.last_payment_check && (
+              <p>Last check: {new Date(paymentStatus.last_payment_check).toLocaleString()}</p>
+            )}
+            <p>Verification attempts: {paymentStatus.verification_attempts}</p>
+            {paymentStatus.verification_error && (
+              <p className="text-[#FF9B33]">Error: {paymentStatus.verification_error}</p>
+            )}
+          </div>
+          {paymentStatus.last_event && (
+            <div className="mt-3 rounded bg-white/5 p-2 text-[10px] text-white/60">
+              <p className="uppercase tracking-wider text-white/70 mb-1">Last event</p>
+              <p>ID: {paymentStatus.last_event.id}</p>
+              <p>Status: {paymentStatus.last_event.status}</p>
+              <p>Wallet: {paymentStatus.last_event.wallet}</p>
+              <p>Amount: {paymentStatus.last_event.amount} TON</p>
+              <p>Received: {new Date(paymentStatus.last_event.received_at).toLocaleString()}</p>
+            </div>
+          )}
+          {paymentStatus.status !== 'paid' && (
+            <Button
+              onClick={handleRetryVerification}
+              disabled={isRetryingVerification}
+              className="mt-3 w-full bg-white/10 hover:bg-white/20 text-white uppercase tracking-wider min-h-[40px]"
+            >
+              <RotateCcw size={14} className="mr-2" />
+              {isRetryingVerification ? 'RETRYING...' : 'RETRY VERIFICATION'}
+            </Button>
+          )}
         </GlassCard>
       )}
 
