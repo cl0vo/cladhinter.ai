@@ -67,6 +67,22 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
   const rawAddress = wallet?.rawAddress || tonWallet?.account.address || '';
   const hasWalletConnection = Boolean(tonWallet);
 
+  const normalizeChain = useCallback((value: string | undefined | null): string => {
+    if (!value) {
+      return 'ton-mainnet';
+    }
+
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === 'ton-mainnet' || trimmed === 'mainnet' || trimmed === '-239') {
+      return 'ton-mainnet';
+    }
+    if (trimmed === 'ton-testnet' || trimmed === 'testnet' || trimmed === '-3') {
+      return 'ton-testnet';
+    }
+
+    return value;
+  }, []);
+
   const connect = useCallback(async () => {
     if (!tonConnectUI) {
       throw new Error('TON Connect UI is not available.');
@@ -167,10 +183,12 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
 
     (async () => {
       try {
+        const normalizedChain = normalizeChain(tonWallet.account.chain);
+
         const response = await finishWalletProof({
           address: userFriendlyAddress || tonWallet.account.address,
           rawAddress: tonWallet.account.address,
-          chain: tonWallet.account.chain,
+          chain: normalizedChain,
           publicKey: tonWallet.account.publicKey || '',
           nonce,
           proof,
@@ -183,7 +201,7 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
         setWallet({
           address: userFriendlyAddress || tonWallet.account.address,
           rawAddress: tonWallet.account.address,
-          chain: tonWallet.account.chain,
+          chain: normalizedChain,
           publicKey: tonWallet.account.publicKey || '',
           proof,
           accessToken: response.accessToken,
@@ -219,6 +237,7 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
     userFriendlyAddress,
     currentNonce,
     processedSignature,
+    normalizeChain,
   ]);
 
   const sendTransaction = useCallback(
