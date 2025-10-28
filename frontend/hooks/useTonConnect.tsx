@@ -37,7 +37,7 @@ interface TonConnectContextValue {
   isConnecting: boolean;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  sendTransaction: (params: { to: string; amount: string; payload?: string }) => Promise<unknown>;
+  sendTransaction: (params: { to: string; amount: string; payload?: string }) => Promise<{ boc?: string } | null>;
   isConnected: boolean;
   isVerifying: boolean;
   proofError: string | null;
@@ -152,11 +152,16 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
 
     const tonProof = tonWallet.connectItems?.tonProof;
 
-    if (!tonProof) {
-      setIsVerifying(false);
-      setProofError(null);
-      return;
-    }
+  if (!tonProof) {
+    console.debug('[ton-connect] wallet connected without proof', {
+      address: tonWallet.account.address,
+      rawAddress: tonWallet.account.address,
+      connectItems: tonWallet.connectItems,
+    });
+    setIsVerifying(false);
+    setProofError(null);
+    return;
+  }
 
     if ('error' in tonProof) {
       const message = tonProof.error?.message || 'Wallet declined the proof request.';
@@ -177,6 +182,13 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
     setProcessedSignature(proof.signature);
     setIsVerifying(true);
     setProofError(null);
+
+    console.debug('[ton-connect] received ton proof', {
+      address: tonWallet.account.address,
+      chain: tonWallet.account.chain,
+      payloadLength: proof.payload.length,
+      hasStateInit: Boolean(proof.state_init),
+    });
 
     const nonce = currentNonce ?? proof.payload;
     let cancelled = false;
@@ -213,6 +225,7 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
           return;
         }
 
+        console.error('[ton-connect] proof verification failed', error);
         const message =
           error instanceof Error ? error.message : 'Failed to verify wallet proof.';
         setProofError(message);
@@ -241,7 +254,9 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
   ]);
 
   const sendTransaction = useCallback(
-    async (params: { to: string; amount: string; payload?: string }) => {
+    async (
+      params: { to: string; amount: string; payload?: string },
+    ): Promise<{ boc?: string } | null> => {
       if (!wallet) {
         throw new Error('Wallet not connected');
       }
@@ -270,7 +285,11 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
         };
 
         const result = await tonConnectUI.sendTransaction(transaction);
-        return result;
+        if (result && typeof result === 'object') {
+          return result as { boc?: string };
+        }
+
+        return null;
       } catch (error) {
         console.error('Transaction failed:', error);
         throw error;
@@ -306,6 +325,40 @@ export function TonConnectProvider({ children }: TonConnectProviderProps) {
       rawAddress,
     ],
   );
+
+  useEffect(() => {
+    if (!tonConnectUI || !import.meta.env.DEV || typeof window === 'undefined') {
+      return;
+    }
+
+    const eventNames = [
+      'ton-connect-ui-connection-started',
+      'ton-connect-ui-connection-completed',
+      'ton-connect-ui-connection-error',
+      'ton-connect-ui-transaction-sent-for-signature',
+      'ton-connect-ui-transaction-signed',
+      'ton-connect-ui-transaction-signing-failed',
+    ] as const;
+
+    const handler = (event: Event) => {
+      if (!(event instanceof CustomEvent)) {
+        return;
+      }
+
+      // eslint-disable-next-line no-console
+      console.info(`[ton-connect] ${event.type}`, event.detail);
+    };
+
+    eventNames.forEach((eventName) => {
+      window.addEventListener(eventName, handler as EventListener);
+    });
+
+    return () => {
+      eventNames.forEach((eventName) => {
+        window.removeEventListener(eventName, handler as EventListener);
+      });
+    };
+  }, [tonConnectUI]);
 
   return <TonConnectContext.Provider value={value}>{children}</TonConnectContext.Provider>;
 }
