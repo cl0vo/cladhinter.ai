@@ -1,5 +1,13 @@
 import { useTonConnectUI, useTonWallet, useTonAddress } from '@tonconnect/ui-react';
-import { useCallback, useEffect, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import { finishWalletProof, startWalletProof } from '../utils/api/sqlClient';
 
@@ -24,7 +32,27 @@ export interface TonWallet {
   userId?: string;
 }
 
-export function useTonConnect() {
+interface TonConnectContextValue {
+  wallet: TonWallet | null;
+  isConnecting: boolean;
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
+  sendTransaction: (params: { to: string; amount: string; payload?: string }) => Promise<unknown>;
+  isConnected: boolean;
+  isVerifying: boolean;
+  proofError: string | null;
+  hasWalletConnection: boolean;
+  friendlyAddress: string;
+  rawAddress: string;
+}
+
+const TonConnectContext = createContext<TonConnectContextValue | undefined>(undefined);
+
+interface TonConnectProviderProps {
+  children: ReactNode;
+}
+
+export function TonConnectProvider({ children }: TonConnectProviderProps) {
   const [tonConnectUI] = useTonConnectUI();
   const tonWallet = useTonWallet();
   const userFriendlyAddress = useTonAddress();
@@ -109,9 +137,8 @@ export function useTonConnect() {
     const tonProof = tonWallet.connectItems?.tonProof;
 
     if (!tonProof) {
-      setWallet(null);
-      setProcessedSignature(null);
-      setCurrentNonce(null);
+      setIsVerifying(false);
+      setProofError(null);
       return;
     }
 
@@ -195,11 +222,7 @@ export function useTonConnect() {
   ]);
 
   const sendTransaction = useCallback(
-    async (params: {
-      to: string;
-      amount: string; // in nanoTON
-      payload?: string;
-    }) => {
+    async (params: { to: string; amount: string; payload?: string }) => {
       if (!wallet) {
         throw new Error('Wallet not connected');
       }
@@ -223,7 +246,7 @@ export function useTonConnect() {
         }
 
         const transaction = {
-          validUntil: Math.floor(Date.now() / 1000) + 600, // 10 minutes
+          validUntil: Math.floor(Date.now() / 1000) + 600,
           messages: [message],
         };
 
@@ -234,20 +257,44 @@ export function useTonConnect() {
         throw error;
       }
     },
-    [tonConnectUI, wallet]
+    [tonConnectUI, wallet],
   );
 
-  return {
-    wallet,
-    isConnecting,
-    connect,
-    disconnect,
-    sendTransaction,
-    isConnected: !!wallet,
-    isVerifying,
-    proofError,
-    hasWalletConnection,
-    friendlyAddress,
-    rawAddress,
-  };
+  const value = useMemo<TonConnectContextValue>(
+    () => ({
+      wallet,
+      isConnecting,
+      connect,
+      disconnect,
+      sendTransaction,
+      isConnected: !!wallet,
+      isVerifying,
+      proofError,
+      hasWalletConnection,
+      friendlyAddress,
+      rawAddress,
+    }),
+    [
+      wallet,
+      isConnecting,
+      connect,
+      disconnect,
+      sendTransaction,
+      isVerifying,
+      proofError,
+      hasWalletConnection,
+      friendlyAddress,
+      rawAddress,
+    ],
+  );
+
+  return <TonConnectContext.Provider value={value}>{children}</TonConnectContext.Provider>;
+}
+
+export function useTonConnect(): TonConnectContextValue {
+  const context = useContext(TonConnectContext);
+  if (!context) {
+    throw new Error('useTonConnect must be used within a TonConnectProvider');
+  }
+  return context;
 }
