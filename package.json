@@ -11,6 +11,7 @@
     "dev:backend": "npm run dev --workspace backend",
     "build": "npm run build --workspace frontend",
     "test": "npm run test --workspace frontend",
+    "test:backend": "npm run test --workspace backend",
     "lint": "npm run lint --workspace frontend",
     "db:indexes": "npm run db:indexes --workspace backend"
   }

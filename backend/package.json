@@ -7,7 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "db:indexes": "tsx scripts/create-indexes.ts"
+    "db:indexes": "tsx scripts/create-indexes.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ton/crypto": "^3.3.0",
@@ -19,6 +20,8 @@
   "devDependencies": {
     "@types/pg": "^8.15.5",
     "tsx": "^4.20.6",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "@types/node": "^20.12.7",
+    "vitest": "^1.6.0"
   }
 }

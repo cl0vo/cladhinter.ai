@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 import { getSecureRandomBytes, sha256 } from '@ton/crypto';
 import {
@@ -63,6 +63,14 @@ interface WalletSessionRow extends QueryResultRow {
   user_id: string | null;
   wallet: string | null;
   ttl: Date | string;
+}
+
+interface WalletTokenRow extends QueryResultRow {
+  token_hash: string;
+  user_id: string;
+  wallet: string;
+  expires_at: Date | string;
+  last_used_at: Date | string | null;
 }
 
 interface UserRow extends QueryResultRow {
@@ -252,6 +260,61 @@ function signAccessTokenSegment(segment: string): string {
   return hmac.digest('base64url');
 }
 
+function hashAccessToken(token: string): string {
+  const hash = createHash('sha256');
+  hash.update(token);
+  return hash.digest('base64url');
+}
+
+function decodeAccessTokenPayload(token: string): AccessTokenPayload | null {
+  const [encodedPayload] = token.split('.');
+  if (!encodedPayload) {
+    return null;
+  }
+  try {
+    const json = Buffer.from(encodedPayload, 'base64url').toString('utf8');
+    return JSON.parse(json) as AccessTokenPayload;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function getWalletToken(tokenHash: string): Promise<WalletTokenRow | null> {
+  const result = await query<WalletTokenRow>(
+    `SELECT * FROM wallet_tokens WHERE token_hash = $1 LIMIT 1`,
+    [tokenHash],
+  );
+  return result.rows[0] ?? null;
+}
+
+async function saveWalletTokenRecord({
+  tokenHash,
+  userId,
+  wallet,
+  expiresAt,
+}: {
+  tokenHash: string;
+  userId: string;
+  wallet: string;
+  expiresAt: Date;
+}): Promise<void> {
+  await query(
+    `INSERT INTO wallet_tokens (token_hash, user_id, wallet, expires_at, last_used_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (token_hash)
+       DO UPDATE SET user_id = EXCLUDED.user_id, wallet = EXCLUDED.wallet, expires_at = EXCLUDED.expires_at, last_used_at = NOW()`,
+    [tokenHash, userId, wallet, expiresAt.toISOString()],
+  );
+}
+
+async function touchWalletToken(tokenHash: string): Promise<void> {
+  await query(`UPDATE wallet_tokens SET last_used_at = NOW() WHERE token_hash = $1`, [tokenHash]).catch(() => {});
+}
+
+async function deleteWalletToken(tokenHash: string): Promise<void> {
+  await query(`DELETE FROM wallet_tokens WHERE token_hash = $1`, [tokenHash]).catch(() => {});
+}
+
 export function createAccessToken(userId: string, wallet: string): string {
   const payload: AccessTokenPayload = {
     userId,
@@ -264,10 +327,10 @@ export function createAccessToken(userId: string, wallet: string): string {
   return `${encoded}.${signature}`;
 }
 
-export function verifyAccessToken(
+export async function verifyAccessToken(
   token: string | null | undefined,
   expected: { userId?: string; wallet?: string } = {},
-): AccessTokenPayload {
+): Promise<AccessTokenPayload> {
   if (!token || typeof token !== 'string') {
     throw new UnauthorizedError('Missing access token');
   }
@@ -300,9 +363,28 @@ export function verifyAccessToken(
     throw new UnauthorizedError('Invalid access token');
   }
 
+  const tokenHash = hashAccessToken(token);
+  const storedToken = await getWalletToken(tokenHash);
+  if (!storedToken) {
+    throw new UnauthorizedError('Access token revoked');
+  }
+
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp <= now) {
+    await deleteWalletToken(tokenHash);
     throw new UnauthorizedError('Access token expired');
+  }
+
+  const storedExpiresAt = storedToken.expires_at instanceof Date
+    ? storedToken.expires_at
+    : new Date(storedToken.expires_at);
+  if (storedExpiresAt.getTime() <= Date.now()) {
+    await deleteWalletToken(tokenHash);
+    throw new UnauthorizedError('Access token expired');
+  }
+
+  if (storedToken.user_id !== payload.userId || storedToken.wallet !== payload.wallet) {
+    throw new UnauthorizedError('Invalid access token');
   }
 
   if (expected.userId && expected.userId !== payload.userId) {
@@ -312,6 +394,8 @@ export function verifyAccessToken(
   if (expected.wallet && expected.wallet !== payload.wallet) {
     throw new UnauthorizedError('Access token wallet mismatch');
   }
+
+  await touchWalletToken(tokenHash);
 
   return payload;
 }
@@ -573,6 +657,19 @@ export async function finishWalletProofSession(input: WalletProofFinishInput): P
   const userRow = await upsertWalletUser(userId, wallet);
 
   const accessToken = createAccessToken(userRow.id, wallet);
+  const decodedPayload = decodeAccessTokenPayload(accessToken);
+  if (!decodedPayload) {
+    throw new Error('Failed to encode access token');
+  }
+  const tokenHash = hashAccessToken(accessToken);
+  const expiresAt = new Date(decodedPayload.exp * 1000);
+  const resolvedWallet = userRow.wallet ?? wallet;
+  await saveWalletTokenRecord({
+    tokenHash,
+    userId: userRow.id,
+    wallet: resolvedWallet,
+    expiresAt,
+  });
 
   return {
     success: true,

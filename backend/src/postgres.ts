@@ -1,28 +1,11 @@
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 
+import { getDatabaseUrl } from './config';
+
 export type SqlExecutor = Pick<Pool, 'query'> | PoolClient;
 
 let pool: Pool | null = null;
 let schemaInitialized = false;
-
-function getDatabaseUrl(): string {
-  const candidates = [
-    process.env.DATABASE_URL,
-    process.env.POSTGRES_PRISMA_URL,
-    process.env.POSTGRES_URL,
-    process.env.DATABASE_URL_UNPOOLED,
-    process.env.POSTGRES_URL_NON_POOLING,
-    process.env.POSTGRES_URL_NO_SSL,
-  ];
-
-  for (const candidate of candidates) {
-    if (candidate) {
-      return candidate;
-    }
-  }
-
-  throw new Error('Missing DATABASE_URL environment variable');
-}
 
 function createPool(): Pool {
   const connectionString = getDatabaseUrl();
@@ -148,6 +131,17 @@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await executor.query(`
+    CREATE TABLE IF NOT EXISTS wallet_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      wallet TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ
+    );
+  `);
+  await executor.query(`CREATE INDEX IF NOT EXISTS wallet_tokens_user_idx ON wallet_tokens (user_id);`);
 }
 
 export async function ensureDatabase(): Promise<void> {

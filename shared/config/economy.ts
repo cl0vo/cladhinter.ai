@@ -43,3 +43,17 @@ export function energyToTon(energy: number): number {
 export function tonToEnergy(ton: number): number {
   return ton * TON_TO_ENERGY_RATE;
 }
+
+const economyConfig = {
+  TON_TO_ENERGY_RATE,
+  ENERGY_PER_AD,
+  BOOSTS,
+  DAILY_VIEW_LIMIT,
+  AD_COOLDOWN_SECONDS,
+  boostMultiplier,
+  getBoostByLevel,
+  energyToTon,
+  tonToEnergy,
+};
+
+export default economyConfig;

@@ -162,3 +162,12 @@ export const adConfig = {
   trackViews: true, // Track ad views on server
   minViewDuration: 3, // Minimum seconds viewed to count as valid view
 };
+
+const adsConfig = {
+  adCreatives,
+  adConfig,
+  getEligibleAds,
+  getRandomAd,
+};
+
+export default adsConfig;

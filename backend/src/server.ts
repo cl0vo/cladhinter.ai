@@ -2,10 +2,10 @@ import 'dotenv/config';
 
 import http from 'node:http';
 
+import { getHttpConfig } from './config';
 import { createApiMiddleware } from './routes';
 
-const port = Number.parseInt(process.env.PORT ?? '4000', 10);
-const host = process.env.HOST ?? '0.0.0.0';
+const { port, host } = getHttpConfig();
 
 const apiMiddleware = createApiMiddleware();
 
