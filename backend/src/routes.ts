@@ -355,8 +355,16 @@ export function createApiMiddleware(): Middleware {
           return;
         }
 
-        const result = await finishWalletProofSession(body);
-        sendJson(res, 200, result);
+        try {
+          const result = await finishWalletProofSession(body);
+          sendJson(res, 200, result);
+        } catch (error) {
+          console.error(
+            '[wallet-proof] finish failed',
+            error instanceof Error ? error.message : error,
+          );
+          throw error;
+        }
         return;
       }
 
