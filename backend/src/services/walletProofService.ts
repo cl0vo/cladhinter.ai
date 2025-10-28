@@ -25,6 +25,7 @@ import nacl from 'tweetnacl';
 import { query } from '../postgres';
 import { UnauthorizedError } from '../errors';
 import type { QueryResultRow } from 'pg';
+import { getCorsAllowedOrigins } from '../config';
 
 const TON_PROOF_PREFIX = 'ton-proof-item-v2/';
 const TON_CONNECT_PREFIX = 'ton-connect';
@@ -198,6 +199,14 @@ function getAllowedDomains(): string[] {
   const value = process.env.TON_PROOF_ALLOWED_DOMAINS;
   if (!value) {
     const domains = new Set(DEFAULT_ALLOWED_DOMAINS);
+
+    const corsOrigins = getCorsAllowedOrigins();
+    for (const origin of corsOrigins) {
+      const parsed = parseDomainCandidate(origin);
+      if (parsed) {
+        domains.add(parsed);
+      }
+    }
 
     const manifestCandidates = [
       process.env.TON_MANIFEST_URL,
