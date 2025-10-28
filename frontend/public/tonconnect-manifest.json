@@ -1,7 +1,7 @@
 {
-  "url": "https://cladhunter-ai.vercel.app",
+  "url": "https://cladhinter-ai-frontend.vercel.app",
   "name": "Cladhunter",
-  "iconUrl": "https://cladhunter-ai.vercel.app/tonconnect/icon.png",
-  "termsOfUseUrl": "https://cladhunter.app/terms",
-  "privacyPolicyUrl": "https://cladhunter.app/privacy"
+  "iconUrl": "https://cladhinter-ai-frontend.vercel.app/tonconnect/icon.png",
+  "termsOfUseUrl": "https://cladhinter-ai-frontend.vercel.app/terms",
+  "privacyPolicyUrl": "https://cladhinter-ai-frontend.vercel.app/privacy"
 }
