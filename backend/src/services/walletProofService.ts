@@ -197,59 +197,62 @@ function parseDomainCandidate(value: string | null | undefined): string | null {
 
 function getAllowedDomains(): string[] {
   const value = process.env.TON_PROOF_ALLOWED_DOMAINS;
-  if (!value) {
-    const domains = new Set(DEFAULT_ALLOWED_DOMAINS);
+  const domains = new Set(DEFAULT_ALLOWED_DOMAINS);
 
-    const corsOrigins = getCorsAllowedOrigins();
-    for (const origin of corsOrigins) {
-      const parsed = parseDomainCandidate(origin);
+  if (value) {
+    for (const item of value.split(',')) {
+      const parsed = parseDomainCandidate(item);
       if (parsed) {
         domains.add(parsed);
       }
     }
-
-    const manifestCandidates = [
-      process.env.TON_MANIFEST_URL,
-      process.env.TON_MANIFEST,
-      process.env.PUBLIC_TON_MANIFEST_URL,
-      process.env.PUBLIC_TONCONNECT_MANIFEST_URL,
-      process.env.VITE_TON_MANIFEST,
-      process.env.VITE_TON_MANIFEST_URL,
-      process.env.NEXT_PUBLIC_TON_MANIFEST_URL,
-    ];
-
-    for (const candidate of manifestCandidates) {
-      const parsed = parseDomainCandidate(candidate);
-      if (parsed) {
-        domains.add(parsed);
-      }
-    }
-
-    const deploymentCandidates = [
-      process.env.APP_URL,
-      process.env.PUBLIC_APP_URL,
-      process.env.NEXT_PUBLIC_APP_URL,
-    ];
-
-    for (const candidate of deploymentCandidates) {
-      const parsed = parseDomainCandidate(candidate);
-      if (parsed) {
-        domains.add(parsed);
-      }
-    }
-
-    const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
-    const parsedVercel = parseDomainCandidate(vercelUrl);
-    if (parsedVercel) {
-      domains.add(parsedVercel);
-    }
-
-    return Array.from(domains);
   }
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+
+  const corsOrigins = getCorsAllowedOrigins();
+  for (const origin of corsOrigins) {
+    const parsed = parseDomainCandidate(origin);
+    if (parsed) {
+      domains.add(parsed);
+    }
+  }
+
+  const manifestCandidates = [
+    process.env.TON_MANIFEST_URL,
+    process.env.TON_MANIFEST,
+    process.env.PUBLIC_TON_MANIFEST_URL,
+    process.env.PUBLIC_TONCONNECT_MANIFEST_URL,
+    process.env.VITE_TON_MANIFEST,
+    process.env.VITE_TON_MANIFEST_URL,
+    process.env.NEXT_PUBLIC_TON_MANIFEST_URL,
+  ];
+
+  for (const candidate of manifestCandidates) {
+    const parsed = parseDomainCandidate(candidate);
+    if (parsed) {
+      domains.add(parsed);
+    }
+  }
+
+  const deploymentCandidates = [
+    process.env.APP_URL,
+    process.env.PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+  ];
+
+  for (const candidate of deploymentCandidates) {
+    const parsed = parseDomainCandidate(candidate);
+    if (parsed) {
+      domains.add(parsed);
+    }
+  }
+
+  const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+  const parsedVercel = parseDomainCandidate(vercelUrl);
+  if (parsedVercel) {
+    domains.add(parsedVercel);
+  }
+
+  return Array.from(domains);
 }
 
 function hashNonce(nonce: string): string {
@@ -486,6 +489,10 @@ async function fetchWalletPublicKey(address: string): Promise<Buffer | null> {
 
 function ensureAllowedDomain(domain: TonProofDomain, allowedDomains: string[]): void {
   if (!allowedDomains.includes(domain.value)) {
+    console.error(
+      '[wallet-proof] Proof domain not allowed',
+      JSON.stringify({ domain: domain.value, allowed: allowedDomains }),
+    );
     throw new Error('Proof domain is not allowed');
   }
 }
