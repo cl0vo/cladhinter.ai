@@ -7,19 +7,52 @@ import type {
   UserStatsResponse,
 } from '../../types';
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL?.trim();
+const runtimeBackendHint = import.meta.env.VITE_BACKEND_URL?.trim();
+const fallbackBackendHint = import.meta.env.VITE_BACKEND_FALLBACK?.trim();
+
+function deriveBackendFromHostname(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const { protocol, host, hostname } = window.location;
+  if (!hostname) {
+    return null;
+  }
+
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    const port = host.includes(':') ? host.split(':')[1] : '5173';
+    const defaultPort = port === '5173' ? '4000' : port;
+    return `${protocol}//${hostname}:${defaultPort}`;
+  }
+
+  const vercelMatch = hostname.match(/^([a-z0-9-]+?)-frontend(?:-[\w-]+)?\.vercel\.app$/i);
+  if (vercelMatch?.[1]) {
+    return `https://${vercelMatch[1]}.onrender.com`;
+  }
+
+  return null;
+}
+
+function normalizeApiBase(base: string): string {
+  const trimmed = base.replace(/\/+$/u, '');
+  if (trimmed.toLowerCase().endsWith('/api')) {
+    return trimmed;
+  }
+  return `${trimmed}/api`;
+}
 
 function resolveApiBase(): string {
-  if (!backendUrl) {
+  const candidate =
+    runtimeBackendHint ||
+    fallbackBackendHint ||
+    deriveBackendFromHostname();
+
+  if (!candidate) {
     return '/api';
   }
 
-  const normalized = backendUrl.replace(/\/+$/u, '');
-  if (normalized.toLowerCase().endsWith('/api')) {
-    return normalized;
-  }
-
-  return `${normalized}/api`;
+  return normalizeApiBase(candidate);
 }
 
 const API_BASE = resolveApiBase();
