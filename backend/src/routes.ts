@@ -334,6 +334,10 @@ export function createApiMiddleware(): Middleware {
 
       if (req.method === 'POST' && pathname === '/api/wallet/proof/start') {
         const body = await readJsonBody<{ userId?: string | null; wallet?: string | null }>(req);
+        console.log('[wallet-proof] start', {
+          userId: body?.userId ?? null,
+          wallet: body?.wallet ?? null,
+        });
         const result = await startWalletProofSession({
           userId: body?.userId ?? null,
           wallet: body?.wallet ?? null,
@@ -354,6 +358,14 @@ export function createApiMiddleware(): Middleware {
           sendJson(res, 400, { error: 'Invalid wallet proof payload' });
           return;
         }
+
+        console.log('[wallet-proof] finish request', {
+          address: body.address.slice(0, 10),
+          chain: body.chain,
+          domain: body.proof.domain?.value,
+          hasStateInit: Boolean(body.proof.state_init),
+          payloadLength: body.proof.payload?.length ?? 0,
+        });
 
         try {
           const result = await finishWalletProofSession(body);
