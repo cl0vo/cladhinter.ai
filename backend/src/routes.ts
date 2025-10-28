@@ -349,7 +349,7 @@ export function createApiMiddleware(): Middleware {
       if (req.method === 'POST' && pathname === '/api/wallet/proof/finish') {
         const body = await readJsonBody<WalletProofFinishInput>(req);
 
-        if (!body?.address || !body?.chain || !body?.publicKey || !body?.nonce) {
+        if (!body?.address || !body?.chain || !body?.nonce) {
           sendJson(res, 400, { error: 'Invalid wallet proof request' });
           return;
         }
@@ -359,16 +359,22 @@ export function createApiMiddleware(): Middleware {
           return;
         }
 
+        const normalizedBody: WalletProofFinishInput = {
+          ...body,
+          publicKey: typeof body.publicKey === 'string' ? body.publicKey : '',
+        };
+
         console.log('[wallet-proof] finish request', {
           address: body.address.slice(0, 10),
-          chain: body.chain,
-          domain: body.proof.domain?.value,
-          hasStateInit: Boolean(body.proof.state_init),
-          payloadLength: body.proof.payload?.length ?? 0,
+          chain: normalizedBody.chain,
+          domain: normalizedBody.proof.domain?.value,
+          hasStateInit: Boolean(normalizedBody.proof.state_init),
+          payloadLength: normalizedBody.proof.payload?.length ?? 0,
+          providedPublicKey: normalizedBody.publicKey ? 'present' : 'missing',
         });
 
         try {
-          const result = await finishWalletProofSession(body);
+          const result = await finishWalletProofSession(normalizedBody);
           sendJson(res, 200, result);
         } catch (error) {
           console.error(
