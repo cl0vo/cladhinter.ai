@@ -566,6 +566,11 @@ export async function claimReward({
   }
 
   return withTransaction(async (client) => {
+    let user = await fetchUser(client, userId, { forUpdate: true });
+    if (!user) {
+      user = await upsertUser(client, userId);
+    }
+
     const existing = await client.query(
       `SELECT 1 FROM reward_claims WHERE user_id = $1 AND partner_id = $2`,
       [userId, partnerId],
@@ -592,7 +597,7 @@ export async function claimReward({
       [randomUUID(), userId, partnerId, partner.reward, partner.name],
     );
 
-    const energy = Number(updated.rows[0]?.energy ?? partner.reward);
+    const energy = Number(updated.rows[0]?.energy ?? (user.energy ?? 0) + partner.reward);
 
     return {
       success: true,
