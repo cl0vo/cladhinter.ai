@@ -26,7 +26,7 @@ function deriveBackendFromHostname(): string | null {
     return `${protocol}//${hostname}:${defaultPort}`;
   }
 
-  const vercelMatch = hostname.match(/^([a-z0-9-]+?)-frontend(?:-[\w-]+)?\.vercel\.app$/i);
+  const vercelMatch = hostname.match(/^([a-z0-9-]+?)(?:-frontend)?(?:-[\w-]+)?\.vercel\.app$/i);
   if (vercelMatch?.[1]) {
     return `https://${vercelMatch[1]}.onrender.com`;
   }
