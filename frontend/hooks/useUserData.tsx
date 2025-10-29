@@ -1,4 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+
 import { useAuth } from './useAuth';
 import { useApi } from './useApi';
 
@@ -9,30 +18,58 @@ export interface UserData {
   boost_expires_at: string | null;
 }
 
-export function useUserData() {
+interface UserDataContextValue {
+  userData: UserData | null;
+  loading: boolean;
+  refreshBalance: () => Promise<void>;
+}
+
+const UserDataContext = createContext<UserDataContextValue | undefined>(undefined);
+
+export function UserDataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { makeRequest } = useApi();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserData = useCallback(async () => {
-    if (!user) return;
+  useEffect(() => {
+    let cancelled = false;
 
-    const data = await makeRequest<{ user: UserData }>(
+    if (!user) {
+      setUserData(null);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLoading(true);
+    makeRequest<{ user: UserData }>(
       '/user/init',
       { method: 'POST' },
       user.accessToken,
-      user.id
-    );
+      user.id,
+    )
+      .then((data) => {
+        if (!cancelled && data?.user) {
+          setUserData(data.user);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
 
-    if (data) {
-      setUserData(data.user);
-    }
-    setLoading(false);
+    return () => {
+      cancelled = true;
+    };
   }, [user, makeRequest]);
 
   const refreshBalance = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     const data = await makeRequest<{
       energy: number;
@@ -56,9 +93,22 @@ export function useUserData() {
     }
   }, [user, makeRequest]);
 
-  useEffect(() => {
-    fetchUserData();
-  }, [fetchUserData]);
+  const value = useMemo<UserDataContextValue>(
+    () => ({
+      userData,
+      loading,
+      refreshBalance,
+    }),
+    [userData, loading, refreshBalance],
+  );
 
-  return { userData, loading, refreshBalance };
+  return <UserDataContext.Provider value={value}>{children}</UserDataContext.Provider>;
+}
+
+export function useUserData(): UserDataContextValue {
+  const context = useContext(UserDataContext);
+  if (!context) {
+    throw new Error('useUserData must be used within a UserDataProvider');
+  }
+  return context;
 }

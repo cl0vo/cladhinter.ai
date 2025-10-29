@@ -152,7 +152,7 @@ Detailed walkthrough → [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - ✅ Tonapi verification + webhook handler for TON payments
 - ✅ Shared config, cleaned documentation
 - ✅ Frontend build & stats/mining flow verified on Vercel
-- ⚠️ Economy accrual (`CL` rewards) under investigation — verify Neon tables & watch logs
+- ⚠️ Economy accrual (`CL` rewards) under investigation — watch logs + balance update path under review
 - ⚠️ Monitoring + webhook hardening still require production wiring
 
 Ready for deployment following the steps above. Ping the team before starting a roadmap item or adjusting shared configs.
@@ -187,3 +187,11 @@ Ready for deployment following the steps above. Ping the team before starting a 
    LIMIT 20;
    ```
    If entries appear here but `users.energy` stays flat, check for failed transactions/rollbacks in Render logs.
+5. **Claim rewards** – ensure boosts and partner rewards update the balance:
+   ```sql
+   SELECT reward, partner_name, claimed_at
+   FROM reward_claims
+   WHERE user_id = '<user-id>'
+   ORDER BY created_at DESC;
+   ```
+   No rows indicate the claim path did not persist; inspect API logs for `reward already claimed` or transaction failures.
