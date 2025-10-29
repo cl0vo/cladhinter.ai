@@ -35,6 +35,8 @@ describe('walletProofService helpers', () => {
       process.env.TON_PROOF_ALLOWED_DOMAINS = previousEnv;
 
       expect(allowed).toContain('example.com');
+      expect(allowed).toContain('cladhunter-ai-frontend.vercel.app');
+      expect(allowed).toContain('cladhinter-ai-frontend.vercel.app');
       expect(allowed).toContain('foo.bar');
       const unique = new Set(allowed);
       expect(unique.size).toBe(allowed.length);

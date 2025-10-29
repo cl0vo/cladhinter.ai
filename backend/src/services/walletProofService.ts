@@ -39,6 +39,8 @@ const DEFAULT_ALLOWED_DOMAINS = [
   'localhost:4173',
   '127.0.0.1:4173',
   'ton-connect.github.io',
+  'cladhunter-ai-frontend.vercel.app',
+  'cladhinter-ai-frontend.vercel.app',
   't.me',
 ];
 
@@ -559,7 +561,15 @@ async function verifyTonProof(
   options: { expectedDomain?: string | null } = {},
 ): Promise<void> {
   const allowedDomains = collectAllowedDomains();
-  ensureDomainAllowed(payload.proof.domain, allowedDomains, options.expectedDomain);
+  const proofDomainNormalized = normalizeDomain(payload.proof.domain.value);
+  const expectedDomainNormalized = options.expectedDomain
+    ? normalizeDomain(options.expectedDomain)
+    : null;
+  const enforcedExpectedDomain =
+    expectedDomainNormalized && expectedDomainNormalized === proofDomainNormalized
+      ? options.expectedDomain
+      : null;
+  ensureDomainAllowed(payload.proof.domain, allowedDomains, enforcedExpectedDomain);
   ensureTimestampFresh(payload.proof.timestamp);
 
   const resolvedAddress = Address.parse(payload.address);
