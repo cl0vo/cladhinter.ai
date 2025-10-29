@@ -1,121 +1,145 @@
 # Cladhunter
 
-> Обновлённая watch-to-earn платформа: фронт на Vercel, API на Render, база в Neon.
+> Watch-to-earn Telegram experience powered by TON. Frontend runs on Vercel, API on Render, data on Neon.
 
 ---
 
-## 🚀 Текущий стек
+## Highlights
 
-| Слой      | Технологии                              | Хостинг   |
-|-----------|------------------------------------------|-----------|
-| Frontend  | React 18, TypeScript, Vite, Tailwind     | Vercel    |
-| Backend   | Node 18, Express, Zod, pg                | Render    |
-| Database  | PostgreSQL                               | Neon      |
-| Общие данные | `shared/config/*` (адсы, бусты, партнёры) | -       |
-
-TonConnect подключается напрямую во фронте, API хранит экономику, статистику и покупки бустов.
+- **Watch-to-earn mining** – users farm energy by watching partner creatives.
+- **Boosts with TON** – premium multipliers are purchased via TON payments (manual confirmation for now).
+- **Partner rewards** – configurable campaigns for Telegram / X / YouTube channels.
+- **Session-based auth** – backend issues anonymous tokens and enforces rate limits.
+- **Shared config** – ads, boosts and partners live in `shared/` and are reused by both front and back.
 
 ---
 
-## 📦 Структура репозитория
+## Tech Stack at a Glance
+
+| Layer     | Technologies                          | Hosting |
+|-----------|----------------------------------------|---------|
+| Frontend  | React 18, TypeScript, Vite, Tailwind   | Vercel  |
+| Backend   | Node 18, Express, Zod, express-rate-limit, pg | Render  |
+| Database  | PostgreSQL                             | Neon    |
+| Shared    | TypeScript config modules              | –       |
+
+---
+
+## Repository Layout
 
 ```
 .
-├── backend/                # Express API + доступ к Neon
-│   ├── src/config.ts       # HTTP/DB/CORS настройки
-│   ├── src/db.ts           # пул pg + миграции
-│   ├── src/routes.ts       # REST-роуты (/api/*)
-│   └── src/services/       # бизнес-логика (майнинг, бусты, награды)
-├── frontend/               # Vite-приложение для Vercel
-│   ├── App.tsx             # точка входа (экраны Mining/Stats/Wallet)
-│   ├── hooks/              # работа с API и хранилищем пользователя
-│   └── utils/api/client.ts # резолвинг BACKEND URL
-├── shared/config/          # общая конфигурация (ads, economy, partners)
-└── docs/DEPLOYMENT.md      # инструкция по деплою (Vercel + Render + Neon)
+├── backend/                # Express API + Neon/Postgres access
+│   ├── src/config.ts       # HTTP / DB / CORS / rate limit settings
+│   ├── src/db.ts           # pg pool + schema migrations
+│   ├── src/routes.ts       # REST routing (/api/*)
+│   └── src/services/       # Business logic (auth, mining, rewards, boosts)
+├── frontend/               # Vite + React client for Vercel
+│   ├── App.tsx             # Entry point (Mining / Stats / Wallet)
+│   ├── hooks/              # Session + data fetching helpers
+│   └── utils/api           # Backend client & base URL resolver
+├── shared/config/          # Ads, boosts, partner reward definitions
+└── docs/DEPLOYMENT.md      # Detailed Vercel + Render + Neon deployment guide
 ```
 
-Удалён старый Supabase Edge backend, код Telegram-инициализации и тон-пруф обрабатываются внутри нового API.
+Supabase Edge logic, TON proof stubs and unused assets were removed to keep the codebase focused on the new stack.
 
 ---
 
-## 🛠️ Локальная разработка
+## Authentication & Headers
+
+1. Frontend calls `POST /api/auth/anonymous` (no headers required) to obtain `{ userId, accessToken }`.
+2. All other API calls must include:
+   - `Authorization: Bearer <accessToken>`
+   - `X-User-ID: <userId>`
+3. Tokens are stored hashed in `user_tokens`, updated on each request, and subject to rate limiting.
+
+The React hook `useAuth()` handles session bootstrap and persistence (`localStorage`), so most components can rely on `user.id` and `user.accessToken` being available once `loading` is `false`.
+
+---
+
+## API Surface (summary)
+
+| Method | Endpoint                   | Description                            |
+|--------|----------------------------|----------------------------------------|
+| POST   | `/api/auth/anonymous`      | Issue anonymous user & token           |
+| GET    | `/api/health`              | Service health probe                   |
+| POST   | `/api/user/init`           | Initialise user session & counters     |
+| GET    | `/api/user/balance`        | Current energy, boost level, multiplier|
+| GET    | `/api/stats`               | Mining statistics & history            |
+| POST   | `/api/ads/complete`        | Register an ad watch                   |
+| GET    | `/api/rewards/status`      | Claimed partner rewards summary        |
+| POST   | `/api/rewards/claim`       | Claim partner reward                   |
+| POST   | `/api/orders/create`       | Create TON boost order                 |
+| POST   | `/api/orders/:id/confirm`  | Confirm TON boost payment (manual)     |
+
+Response contracts are defined in `frontend/types/index.ts` and implemented under `backend/src/services/userService.ts`.
+
+---
+
+## Local Development
+
+> Requires Node.js 18+ and a Postgres connection (Neon recommended).
 
 ```bash
-# 1. Установить зависимости
+# install dependencies
 npm install
 
-# 2. Настроить окружение
-cp backend/.env.example backend/.env      # вписать DATABASE_URL и кошелёк
-cp frontend/.env.example frontend/.env    # при необходимости переопределить URL API
+# configure environment
+cp backend/.env.example backend/.env      # fill DATABASE_URL, merchant wallet, etc.
+cp frontend/.env.example frontend/.env    # override VITE_BACKEND_URL if needed
 
-# 3. Запустить backend (порт 4000)
+# start API (port 4000)
 npm run dev:backend
 
-# 4. Запустить фронт (порт 5173)
+# start Vite dev server (port 5173)
 npm run dev:frontend
 ```
 
-Фронтенд автоматически подставит `http://localhost:4000/api` для запросов, если `VITE_BACKEND_URL` не задан.
+The frontend automatically resolves `http://localhost:4000/api` when `VITE_BACKEND_URL` is not provided.
 
 ---
 
-## 🌐 API в двух словах
+## Environment Variables
 
-Все эндпоинты расположены под `/api`. Авторизация условная: фронт отправляет заголовок `X-User-ID` и произвольный `Authorization: Bearer {token}`.
+| Variable | Default / Example | Purpose |
+|----------|-------------------|---------|
+| `DATABASE_URL` | *(required)* | Neon/Postgres connection string (`sslmode=require`) |
+| `HOST` | `0.0.0.0` | API bind address |
+| `PORT` | `4000` | API port (Render overrides) |
+| `CORS_ALLOWED_ORIGINS` | `*` | Comma-separated origin allow-list |
+| `MERCHANT_WALLET` | `UQ…JKZ` | TON wallet receiving boost payments |
+| `API_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window per IP (ms) |
+| `API_RATE_LIMIT_MAX` | `120` | Requests allowed per window |
+| `VITE_BACKEND_URL` *(frontend)* | optional | Force backend URL during build/runtime |
 
-| Метод | Эндпоинт                | Назначение                         |
-|-------|-------------------------|------------------------------------|
-| GET   | `/api/health`           | Проверка состояния сервиса         |
-| POST  | `/api/user/init`        | Создать/инициализировать пользователя |
-| GET   | `/api/user/balance`     | Энергия, буст, мультипликатор      |
-| GET   | `/api/stats`            | Статистика по просмотрам           |
-| POST  | `/api/ads/complete`     | Засчитать просмотр рекламы         |
-| GET   | `/api/rewards/status`   | Полученные партнёрские награды     |
-| POST  | `/api/rewards/claim`    | Выдать награду за партнёра         |
-| POST  | `/api/orders/create`    | Создать заказ на буст              |
-| POST  | `/api/orders/:id/confirm` | Подтвердить оплату буста         |
-
-Структуры запросов/ответов представлены в `frontend/types/index.ts` и в сервисах `backend/src/services/userService.ts`.
+Sample files: `backend/.env.example`, `frontend/.env.example`.
 
 ---
 
-## 🔐 Необходимые переменные окружения
+## Deployment
 
-**backend/.env**
-```
-DATABASE_URL=postgres://user:pass@host/db?sslmode=require
-HOST=0.0.0.0
-PORT=4000
-CORS_ALLOWED_ORIGINS=https://cladhunter.vercel.app
-MERCHANT_WALLET=UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ
-API_RATE_LIMIT_WINDOW_MS=60000      # опционально, окно (мс)
-API_RATE_LIMIT_MAX=120              # опционально, запросов на окно
-```
+1. **Neon** – create a database, grab the pooled URL (`sslmode=require`).
+2. **Render** – Web Service (Node), build `npm install && npm run build:backend`, start `npm run start:backend`, add env vars above.
+3. **Vercel** – Project build `npm run build:frontend`, output `frontend/dist`, define `VITE_BACKEND_URL` pointing to the Render API.
 
-**frontend/.env (опционально)**
-```
-VITE_BACKEND_URL=https://cladhunter-api.onrender.com
-```
+👉 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for screenshots, health-check configuration, and operational tips.
 
 ---
 
-## 🚢 Деплой
+## Roadmap / Next Steps
 
-1. **Neon** — создать базу, скопировать `DATABASE_URL` с `sslmode=require`.
-2. **Render** — Web Service, build `npm install && npm run build:backend`, start `npm run start:backend`, прописать переменные окружения.
-3. **Vercel** — build `npm run build:frontend`, output `frontend/dist`, указать `VITE_BACKEND_URL` на render-API.
-
-Подробная пошаговая инструкция: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+- Wire real TON payment verification (webhooks or tonapi) instead of manual confirmation.
+- Harden session onboarding by verifying Telegram `initData` signatures.
+- Integrate a production ad network or mediation layer and extend analytics.
 
 ---
 
-## TODO / дальнейшие шаги
+## Status
 
-- Проверка TON-платежей через вебхуки вместо ручного подтверждения.
-- Усиление авторизации: rate limiting готов, осталось подписывать Telegram initData.
-- Интеграция реальной рекламной сети и расширенная аналитика.
+- ✅ Monorepo refactor (Vercel + Render + Neon)
+- ✅ Anonymous session tokens & global rate limiting
+- ✅ Shared configuration & cleaned codebase
+- ⚠️ Manual TON payment confirmation (webhooks pending)
 
----
-
-**Последнее обновление:** 29 октября 2025 г.  
-**Статус:** mining & rewards работают; платёжная верификация в разработке.
+The project is ready for deployment to Vercel/Render/Neon following the steps above. Let me know when you want to tackle the next roadmap milestone! 

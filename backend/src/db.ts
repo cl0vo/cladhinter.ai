@@ -100,6 +100,18 @@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
   await executor.query(
     `CREATE INDEX IF NOT EXISTS orders_user_created_idx ON orders (user_id, created_at DESC);`,
   );
+
+  await executor.query(`
+    CREATE TABLE IF NOT EXISTS user_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await executor.query(
+    `CREATE INDEX IF NOT EXISTS user_tokens_user_idx ON user_tokens (user_id);`,
+  );
 }
 
 export async function ensureDatabase(): Promise<void> {

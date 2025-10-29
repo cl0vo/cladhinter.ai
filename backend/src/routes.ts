@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { createAnonymousSession, verifyAccessToken } from './services/authService';
 import {
   claimReward,
   completeAdWatch,
@@ -13,7 +14,7 @@ import {
   initUser,
 } from './services/userService';
 
-type AuthenticatedRequest = Request & { userId: string };
+type AuthenticatedRequest = Request & { userId: string; accessToken: string };
 
 const router = Router();
 
@@ -29,23 +30,37 @@ router.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+router.post('/auth/anonymous', (_req, res, next) => {
+  createAnonymousSession()
+    .then((session) => {
+      res.status(201).json(session);
+    })
+    .catch(next);
+});
+
 router.use((req: AuthenticatedRequest, res, next) => {
-  const headerId = req.header('x-user-id')?.trim();
-  const bodyId =
-    typeof req.body === 'object' && req.body && 'userId' in req.body
-      ? String((req.body as Record<string, unknown>).userId)
-      : undefined;
-  const queryId = typeof req.query?.userId === 'string' ? req.query.userId : undefined;
+  (async () => {
+    const userId = req.header('x-user-id')?.trim() ?? '';
+    const authHeader = req.header('authorization')?.trim() ?? '';
 
-  const userId = headerId || bodyId || queryId;
+    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+    const token = bearerMatch?.[1]?.trim() ?? '';
 
-  if (!userId) {
-    res.status(401).json({ error: 'Missing user identifier. Provide X-User-ID header.' });
-    return;
-  }
+    if (!userId || !token) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
 
-  req.userId = userId;
-  next();
+    const valid = await verifyAccessToken(userId, token);
+    if (!valid) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    req.userId = userId;
+    req.accessToken = token;
+    next();
+  })().catch(next);
 });
 
 router.post(
