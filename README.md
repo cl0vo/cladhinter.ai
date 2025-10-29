@@ -151,7 +151,39 @@ Detailed walkthrough → [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - ✅ Anonymous session tokens & global rate limiting
 - ✅ Tonapi verification + webhook handler for TON payments
 - ✅ Shared config, cleaned documentation
-- ✅ Frontend build verified live on Vercel (monorepo configs committed)
-- ⚠️ Webhook source and monitoring still require production wiring
+- ✅ Frontend build & stats/mining flow verified on Vercel
+- ⚠️ Economy accrual (`CL` rewards) under investigation — verify Neon tables & watch logs
+- ⚠️ Monitoring + webhook hardening still require production wiring
 
 Ready for deployment following the steps above. Ping the team before starting a roadmap item or adjusting shared configs.
+
+---
+
+## Economy Troubleshooting
+
+> Use this when ad views are processed but balances stay unchanged.
+
+1. **Ensure migrations ran**: `npm run dev:backend` will call `ensureDatabase()` and create the required tables if they are missing.
+2. **Verify schema in Neon** – the economy flow expects these tables:
+   - `users` (energy, boost_level, totals, timestamps)
+   - `watch_logs` (per-ad reward history)
+   - `session_logs`
+   - `reward_claims`
+   - `orders`
+   - `user_tokens`
+3. **Manual check** – run:
+   ```sql
+   SELECT table_name FROM information_schema.tables
+   WHERE table_schema = 'public'
+     AND table_name IN ('users','watch_logs','session_logs','reward_claims','orders','user_tokens');
+   ```
+   Missing tables mean the backend couldn’t bootstrap the schema.
+4. **Inspect watch logs** – confirm ad completions are being recorded:
+   ```sql
+   SELECT created_at, reward, multiplier
+   FROM watch_logs
+   WHERE user_id = '<user-id>'
+   ORDER BY created_at DESC
+   LIMIT 20;
+   ```
+   If entries appear here but `users.energy` stays flat, check for failed transactions/rollbacks in Render logs.

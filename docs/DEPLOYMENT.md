@@ -97,6 +97,24 @@ Configure Render's health check to use `/api/health` to make sure the service is
 
 ---
 
+## 6. Economy Verification
+
+If ad completions do not increase the user balance:
+
+1. Run the backend locally (`npm run dev:backend`) once to execute `ensureDatabase()` (creates tables on Neon).
+2. In Neon, confirm that the following tables exist: `users`, `watch_logs`, `session_logs`, `reward_claims`, `orders`, `user_tokens`.
+3. Inspect recent watch logs to validate inserts:
+   ```sql
+   SELECT created_at, reward, multiplier
+   FROM watch_logs
+   WHERE user_id = '<user-id>'
+   ORDER BY created_at DESC
+   LIMIT 20;
+   ```
+4. If logs exist but energy stays unchanged, review Render logs for failed transactions or permission issues.
+
+---
+
 ### Next Steps
 
 - Wire real TON payment verification into `backend/src/services/userService.ts`.
