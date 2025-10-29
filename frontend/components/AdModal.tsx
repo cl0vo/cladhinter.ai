@@ -76,8 +76,8 @@ export function AdModal({ isOpen, ad, onClose, onAdCompleted }: AdModalProps) {
           className="fixed inset-0 z-[9999] flex flex-col bg-black"
           style={{ 
             touchAction: 'none',
-            height: '100vh',
             height: '100dvh', // Dynamic viewport height for mobile browsers
+            minHeight: '100vh', // Fallback for browsers without dvh support
           }}
         >
           {/* Ad Creative Container - Full screen optimized for mobile */}
@@ -93,8 +93,7 @@ export function AdModal({ isOpen, ad, onClose, onAdCompleted }: AdModalProps) {
                 onEnded={handleVideoEnded}
                 style={{ 
                   aspectRatio: '9/16',
-                  maxHeight: '100vh',
-                  maxHeight: '100dvh',
+                  maxHeight: 'min(100vh, 100dvh)',
                 }}
               />
             ) : (
@@ -104,8 +103,7 @@ export function AdModal({ isOpen, ad, onClose, onAdCompleted }: AdModalProps) {
                 className="w-full h-full object-cover"
                 style={{ 
                   aspectRatio: '9/16',
-                  maxHeight: '100vh',
-                  maxHeight: '100dvh',
+                  maxHeight: 'min(100vh, 100dvh)',
                 }}
               />
             )}
