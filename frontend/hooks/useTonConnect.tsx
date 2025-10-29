@@ -1,4 +1,8 @@
-import { useTonConnectUI, useTonWallet, useTonAddress } from '@tonconnect/ui-react';
+import {
+  useTonAddress,
+  useTonConnectUI,
+  useTonWallet,
+} from '@tonconnect/ui-react';
 import {
   createContext,
   type ReactNode,
@@ -6,44 +10,39 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
-import { finishWalletProof, startWalletProof } from '../utils/api/sqlClient';
+import {
+  finishWalletProof,
+  startWalletProof,
+  type WalletProofStartRequest,
+} from '../utils/api/sqlClient';
+import { getTelegramUserId } from '../utils/telegram';
 
-export interface TonWalletProof {
-  timestamp: number;
-  domain: {
-    lengthBytes: number;
-    value: string;
-  };
-  payload: string;
-  signature: string;
-  state_init?: string;
-}
+type TonConnectStatus = 'idle' | 'connecting' | 'verifying' | 'ready';
 
-export interface TonWallet {
+interface ConnectedWallet {
   address: string;
   rawAddress: string;
   chain: string;
   publicKey: string;
-  proof: TonWalletProof;
-  accessToken?: string;
-  userId?: string;
+  userId: string;
+  accessToken: string;
 }
 
 interface TonConnectContextValue {
-  wallet: TonWallet | null;
-  isConnecting: boolean;
+  wallet: ConnectedWallet | null;
+  status: TonConnectStatus;
+  error: string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  sendTransaction: (params: { to: string; amount: string; payload?: string }) => Promise<{ boc?: string } | null>;
-  isConnected: boolean;
-  isVerifying: boolean;
-  proofError: string | null;
-  hasWalletConnection: boolean;
-  friendlyAddress: string;
-  rawAddress: string;
+  sendTransaction: (params: {
+    to: string;
+    amount: string;
+    payload?: string;
+  }) => Promise<{ boc?: string } | null>;
 }
 
 const TonConnectContext = createContext<TonConnectContextValue | undefined>(undefined);
@@ -52,315 +51,346 @@ interface TonConnectProviderProps {
   children: ReactNode;
 }
 
+const STORAGE_KEYS = {
+  wallet: 'cladhunter:lastWallet',
+  userId: 'cladhunter:lastUserId',
+  token: 'cladhunter:lastToken',
+};
+
+function loadStoredSession(): {
+  wallet: string | null;
+  userId: string | null;
+  accessToken: string | null;
+} {
+  if (typeof window === 'undefined') {
+    return { wallet: null, userId: null, accessToken: null };
+  }
+
+  try {
+    const wallet = window.localStorage.getItem(STORAGE_KEYS.wallet);
+    const userId = window.localStorage.getItem(STORAGE_KEYS.userId);
+    const accessToken = window.localStorage.getItem(STORAGE_KEYS.token);
+    return {
+      wallet: wallet && wallet.trim() ? wallet : null,
+      userId: userId && userId.trim() ? userId : null,
+      accessToken: accessToken && accessToken.trim() ? accessToken : null,
+    };
+  } catch {
+    return { wallet: null, userId: null, accessToken: null };
+  }
+}
+
+function persistSession(data: { wallet: string; userId: string; accessToken: string }): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.wallet, data.wallet);
+    window.localStorage.setItem(STORAGE_KEYS.userId, data.userId);
+    window.localStorage.setItem(STORAGE_KEYS.token, data.accessToken);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function clearStoredSession(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.wallet);
+    window.localStorage.removeItem(STORAGE_KEYS.userId);
+    window.localStorage.removeItem(STORAGE_KEYS.token);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function normalizeChain(value: string | undefined | null): string {
+  if (!value) {
+    return 'ton-mainnet';
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === 'ton-mainnet' || trimmed === 'mainnet' || trimmed === '-239') {
+    return 'ton-mainnet';
+  }
+  if (trimmed === 'ton-testnet' || trimmed === 'testnet' || trimmed === '-3') {
+    return 'ton-testnet';
+  }
+
+  return value;
+}
+
+function resolveCurrentDomain(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return window.location?.host ?? null;
+}
+
 export function TonConnectProvider({ children }: TonConnectProviderProps) {
   const [tonConnectUI] = useTonConnectUI();
   const tonWallet = useTonWallet();
   const userFriendlyAddress = useTonAddress();
-  const [wallet, setWallet] = useState<TonWallet | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [proofError, setProofError] = useState<string | null>(null);
-  const [currentNonce, setCurrentNonce] = useState<string | null>(null);
-  const [processedSignature, setProcessedSignature] = useState<string | null>(null);
 
-  const friendlyAddress = wallet?.address || userFriendlyAddress || '';
-  const rawAddress = wallet?.rawAddress || tonWallet?.account.address || '';
-  const hasWalletConnection = Boolean(tonWallet);
+  const [wallet, setWallet] = useState<ConnectedWallet | null>(null);
+  const [status, setStatus] = useState<TonConnectStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
 
-  const normalizeChain = useCallback((value: string | undefined | null): string => {
-    if (!value) {
-      return 'ton-mainnet';
-    }
+  const nonceRef = useRef<string | null>(null);
+  const processedSignatureRef = useRef<string | null>(null);
 
-    const trimmed = value.trim().toLowerCase();
-    if (trimmed === 'ton-mainnet' || trimmed === 'mainnet' || trimmed === '-239') {
-      return 'ton-mainnet';
-    }
-    if (trimmed === 'ton-testnet' || trimmed === 'testnet' || trimmed === '-3') {
-      return 'ton-testnet';
-    }
-
-    return value;
+  const resetState = useCallback(() => {
+    setWallet(null);
+    setStatus('idle');
+    setError(null);
+    nonceRef.current = null;
+    processedSignatureRef.current = null;
   }, []);
+
+  const handleDisconnect = useCallback(async () => {
+    try {
+      await tonConnectUI?.disconnect();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('TON Connect disconnect failed', err);
+    } finally {
+      tonConnectUI?.setConnectRequestParameters(null);
+      clearStoredSession();
+      resetState();
+    }
+  }, [tonConnectUI, resetState]);
+
+  const finalizeProof = useCallback(
+    async (
+      proof: {
+        timestamp: number;
+        domain: { value: string; lengthBytes: number };
+        payload: string;
+        signature: string;
+        state_init?: string;
+      },
+      account: NonNullable<ReturnType<typeof useTonWallet>>['account'],
+    ) => {
+      if (!tonConnectUI) {
+        throw new Error('TON Connect UI is not available');
+      }
+
+      const telegramUserId = getTelegramUserId() ?? undefined;
+      const nonce = nonceRef.current ?? proof.payload;
+      const normalizedChain = normalizeChain(account.chain);
+
+      const response = await finishWalletProof({
+        address: userFriendlyAddress || account.address,
+        rawAddress: account.address,
+        chain: normalizedChain,
+        publicKey: account.publicKey || '',
+        nonce,
+        userId: telegramUserId,
+        proof,
+      });
+
+      const connected: ConnectedWallet = {
+        address: userFriendlyAddress || account.address,
+        rawAddress: account.address,
+        chain: normalizedChain,
+        publicKey: account.publicKey || '',
+        userId: response.userId,
+        accessToken: response.accessToken,
+      };
+
+      setWallet(connected);
+      setStatus('ready');
+      setError(null);
+      persistSession({
+        wallet: response.wallet,
+        userId: response.userId,
+        accessToken: response.accessToken,
+      });
+      tonConnectUI.setConnectRequestParameters(null);
+    },
+    [tonConnectUI, userFriendlyAddress],
+  );
 
   const connect = useCallback(async () => {
     if (!tonConnectUI) {
-      throw new Error('TON Connect UI is not available.');
+      throw new Error('TON Connect UI is not available');
     }
 
-    setIsConnecting(true);
-    setProofError(null);
-    setWallet(null);
-    setProcessedSignature(null);
+    const stored = loadStoredSession();
+    const telegramUserId = getTelegramUserId();
+    const domain = resolveCurrentDomain();
+
+    const payload: WalletProofStartRequest = {
+      ...(telegramUserId ? { userId: telegramUserId } : {}),
+      ...(stored.userId && !telegramUserId ? { userId: stored.userId } : {}),
+      ...(stored.wallet ? { wallet: stored.wallet } : {}),
+      ...(domain ? { domain } : {}),
+    };
 
     try {
-      tonConnectUI.setConnectRequestParameters({ state: 'loading' });
-
-      const { nonce } = await startWalletProof();
+      setStatus('connecting');
+      setError(null);
+      const { nonce } = await startWalletProof(payload);
       if (!nonce) {
-        throw new Error('Unable to request TON proof payload.');
+        throw new Error('Failed to request TON proof payload');
       }
-
-      setCurrentNonce(nonce);
+      nonceRef.current = nonce;
 
       tonConnectUI.setConnectRequestParameters({
         state: 'ready',
         value: { tonProof: nonce },
       });
-
       await tonConnectUI.openModal();
-    } catch (error) {
+    } catch (err) {
       tonConnectUI.setConnectRequestParameters(null);
-      const message = error instanceof Error ? error.message : 'Failed to connect wallet.';
-      setProofError(message);
-      throw error;
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [tonConnectUI]);
-
-  const disconnect = useCallback(async () => {
-    let caught: unknown;
-    try {
-      await tonConnectUI?.disconnect();
-    } catch (error) {
-      console.error('Failed to disconnect wallet:', error);
-      caught = error;
-    } finally {
-      setWallet(null);
-      setProofError(null);
-      setCurrentNonce(null);
-      setProcessedSignature(null);
-      tonConnectUI?.setConnectRequestParameters(null);
-    }
-
-    if (caught) {
-      throw caught;
+      nonceRef.current = null;
+      const message = err instanceof Error ? err.message : 'Failed to open TON Connect modal';
+      setError(message);
+      setStatus('idle');
+      throw err;
     }
   }, [tonConnectUI]);
 
   useEffect(() => {
-    if (!tonWallet) {
-      setWallet(null);
-      setIsVerifying(false);
-      setProofError(null);
-      setCurrentNonce(null);
-      setProcessedSignature(null);
-      tonConnectUI?.setConnectRequestParameters(null);
+    if (!tonConnectUI) {
       return;
     }
 
-    const tonProof = tonWallet.connectItems?.tonProof;
-
-  if (!tonProof) {
-    console.debug('[ton-connect] wallet connected without proof', {
-      address: tonWallet.account.address,
-      rawAddress: tonWallet.account.address,
-      connectItems: tonWallet.connectItems,
-    });
-    setIsVerifying(false);
-    setProofError(null);
-    return;
-  }
-
-    if ('error' in tonProof) {
-      const message = tonProof.error?.message || 'Wallet declined the proof request.';
-      setProofError(message);
-      setWallet(null);
-      setIsVerifying(false);
-      setProcessedSignature(null);
-      setCurrentNonce(null);
-      return;
-    }
-
-    const { proof } = tonProof;
-
-    if (processedSignature === proof.signature) {
-      return;
-    }
-
-    setProcessedSignature(proof.signature);
-    setIsVerifying(true);
-    setProofError(null);
-
-    console.debug('[ton-connect] received ton proof', {
-      address: tonWallet.account.address,
-      chain: tonWallet.account.chain,
-      payloadLength: proof.payload.length,
-      hasStateInit: Boolean(proof.state_init),
-    });
-
-    const nonce = currentNonce ?? proof.payload;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const normalizedChain = normalizeChain(tonWallet.account.chain);
-
-        const response = await finishWalletProof({
-          address: userFriendlyAddress || tonWallet.account.address,
-          rawAddress: tonWallet.account.address,
-          chain: normalizedChain,
-          publicKey: tonWallet.account.publicKey || '',
-          nonce,
-          proof,
-        });
-
-        if (cancelled) {
+    const unsubscribe = tonConnectUI.onStatusChange(
+      async (nextWallet) => {
+        if (!nextWallet) {
+          resetState();
+          clearStoredSession();
           return;
         }
 
-        setWallet({
-          address: userFriendlyAddress || tonWallet.account.address,
-          rawAddress: tonWallet.account.address,
-          chain: normalizedChain,
-          publicKey: tonWallet.account.publicKey || '',
-          proof,
-          accessToken: response.accessToken,
-          userId: response.userId,
-        });
-        setProofError(null);
-      } catch (error) {
-        if (cancelled) {
+        const tonProofReply = nextWallet.connectItems?.tonProof;
+        if (!tonProofReply) {
           return;
         }
 
-        console.error('[ton-connect] proof verification failed', error);
-        const message =
-          error instanceof Error ? error.message : 'Failed to verify wallet proof.';
-        setProofError(message);
-        setWallet(null);
-      } finally {
-        if (cancelled) {
+        if ('error' in tonProofReply) {
+          processedSignatureRef.current = null;
+          setError(tonProofReply.error?.message ?? 'Wallet declined the proof request');
+          setStatus('idle');
+          tonConnectUI.setConnectRequestParameters(null);
           return;
         }
 
-        setIsVerifying(false);
-        setCurrentNonce(null);
-        tonConnectUI?.setConnectRequestParameters(null);
-      }
-    })();
+        if (!('proof' in tonProofReply)) {
+          processedSignatureRef.current = null;
+          setError('Unexpected TON proof response');
+          setStatus('idle');
+          tonConnectUI.setConnectRequestParameters(null);
+          return;
+        }
+
+        const { proof } = tonProofReply;
+        if (!proof?.signature) {
+          processedSignatureRef.current = null;
+          setError('Invalid TON proof response');
+          setStatus('idle');
+          tonConnectUI.setConnectRequestParameters(null);
+          return;
+        }
+
+        if (processedSignatureRef.current === proof.signature) {
+          return;
+        }
+        processedSignatureRef.current = proof.signature;
+
+        try {
+          setStatus('verifying');
+          await finalizeProof(proof, nextWallet.account);
+        } catch (err) {
+          processedSignatureRef.current = null;
+          tonConnectUI.setConnectRequestParameters(null);
+          const message = err instanceof Error ? err.message : 'Failed to verify TON proof';
+          setError(message);
+          setStatus('idle');
+          setWallet(null);
+        } finally {
+          nonceRef.current = null;
+        }
+      },
+      (err) => {
+        processedSignatureRef.current = null;
+        tonConnectUI.setConnectRequestParameters(null);
+        const message = err instanceof Error ? err.message : 'Wallet connection failed';
+        setError(message);
+        setStatus('idle');
+      },
+    );
 
     return () => {
-      cancelled = true;
+      unsubscribe();
     };
-  }, [
-    tonWallet,
-    tonConnectUI,
-    userFriendlyAddress,
-    currentNonce,
-    processedSignature,
-    normalizeChain,
-  ]);
+  }, [tonConnectUI, finalizeProof, resetState]);
+
+  useEffect(() => {
+    if (!tonWallet) {
+      return;
+    }
+
+    const stored = loadStoredSession();
+    if (stored.accessToken && stored.wallet && !wallet) {
+      setWallet({
+        address: userFriendlyAddress || tonWallet.account.address,
+        rawAddress: tonWallet.account.address,
+        chain: normalizeChain(tonWallet.account.chain),
+        publicKey: tonWallet.account.publicKey || '',
+        userId: stored.userId ?? tonWallet.account.address,
+        accessToken: stored.accessToken,
+      });
+      setStatus('ready');
+    }
+  }, [tonWallet, userFriendlyAddress, wallet]);
 
   const sendTransaction = useCallback(
-    async (
-      params: { to: string; amount: string; payload?: string },
-    ): Promise<{ boc?: string } | null> => {
-      if (!wallet) {
-        throw new Error('Wallet not connected');
-      }
-
+    async (params: { to: string; amount: string; payload?: string }) => {
       if (!tonConnectUI) {
-        throw new Error('TON Connect UI is not available.');
+        throw new Error('TON Connect UI is not available');
+      }
+      if (!wallet) {
+        throw new Error('Wallet is not connected');
       }
 
-      try {
-        const message: {
-          address: string;
-          amount: string;
-          payload?: string;
-        } = {
-          address: params.to,
-          amount: params.amount,
-        };
+      const transaction = {
+        validUntil: Math.floor(Date.now() / 1000) + 600,
+        messages: [
+          {
+            address: params.to,
+            amount: params.amount,
+            payload: params.payload,
+          },
+        ],
+      };
 
-        if (params.payload) {
-          message.payload = params.payload;
-        }
-
-        const transaction = {
-          validUntil: Math.floor(Date.now() / 1000) + 600,
-          messages: [message],
-        };
-
-        const result = await tonConnectUI.sendTransaction(transaction);
-        if (result && typeof result === 'object') {
-          return result as { boc?: string };
-        }
-
-        return null;
-      } catch (error) {
-        console.error('Transaction failed:', error);
-        throw error;
-      }
+      const result = await tonConnectUI.sendTransaction(transaction);
+      return result ?? null;
     },
     [tonConnectUI, wallet],
   );
 
-  const value = useMemo<TonConnectContextValue>(
+  const contextValue = useMemo<TonConnectContextValue>(
     () => ({
       wallet,
-      isConnecting,
+      status,
+      error,
       connect,
-      disconnect,
+      disconnect: handleDisconnect,
       sendTransaction,
-      isConnected: !!wallet,
-      isVerifying,
-      proofError,
-      hasWalletConnection,
-      friendlyAddress,
-      rawAddress,
     }),
-    [
-      wallet,
-      isConnecting,
-      connect,
-      disconnect,
-      sendTransaction,
-      isVerifying,
-      proofError,
-      hasWalletConnection,
-      friendlyAddress,
-      rawAddress,
-    ],
+    [wallet, status, error, connect, handleDisconnect, sendTransaction],
   );
 
-  useEffect(() => {
-    if (!tonConnectUI || !import.meta.env.DEV || typeof window === 'undefined') {
-      return;
-    }
-
-    const eventNames = [
-      'ton-connect-ui-connection-started',
-      'ton-connect-ui-connection-completed',
-      'ton-connect-ui-connection-error',
-      'ton-connect-ui-transaction-sent-for-signature',
-      'ton-connect-ui-transaction-signed',
-      'ton-connect-ui-transaction-signing-failed',
-    ] as const;
-
-    const handler = (event: Event) => {
-      if (!(event instanceof CustomEvent)) {
-        return;
-      }
-
-      // eslint-disable-next-line no-console
-      console.info(`[ton-connect] ${event.type}`, event.detail);
-    };
-
-    eventNames.forEach((eventName) => {
-      window.addEventListener(eventName, handler as EventListener);
-    });
-
-    return () => {
-      eventNames.forEach((eventName) => {
-        window.removeEventListener(eventName, handler as EventListener);
-      });
-    };
-  }, [tonConnectUI]);
-
-  return <TonConnectContext.Provider value={value}>{children}</TonConnectContext.Provider>;
+  return (
+    <TonConnectContext.Provider value={contextValue}>{children}</TonConnectContext.Provider>
+  );
 }
 
 export function useTonConnect(): TonConnectContextValue {

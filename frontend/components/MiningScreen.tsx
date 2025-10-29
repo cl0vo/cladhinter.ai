@@ -18,7 +18,8 @@ export function MiningScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
   const { completeAdWatch: completeAdRpc } = useApi();
-  const { isConnected } = useTonConnect();
+  const { wallet, status } = useTonConnect();
+  const isConnected = Boolean(wallet && status === 'ready');
 
   const [isMining, setIsMining] = useState(false);
   const [miningProgress, setMiningProgress] = useState(0);

@@ -80,6 +80,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export interface WalletProofStartRequest {
   userId?: string | null;
   wallet?: string | null;
+  domain?: string | null;
 }
 
 export interface WalletProofStartResponse {

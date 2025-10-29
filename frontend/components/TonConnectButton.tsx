@@ -6,33 +6,22 @@ import { useTonConnect } from '../hooks/useTonConnect';
 import { Button } from './ui/button';
 
 export function TonConnectButton() {
-  const {
-    wallet,
-    isConnecting,
-    connect,
-    disconnect,
-    isConnected,
-    isVerifying,
-    proofError,
-    hasWalletConnection,
-    friendlyAddress,
-    rawAddress,
-  } = useTonConnect();
+  const { wallet, status, error, connect, disconnect } = useTonConnect();
   const [copied, setCopied] = useState(false);
 
   const resolvedAddress = useMemo(() => {
-    return wallet?.address || friendlyAddress || rawAddress || '';
-  }, [wallet?.address, friendlyAddress, rawAddress]);
+    return wallet?.address ?? wallet?.rawAddress ?? '';
+  }, [wallet?.address, wallet?.rawAddress]);
 
   useEffect(() => {
     setCopied(false);
   }, [resolvedAddress]);
 
   useEffect(() => {
-    if (proofError) {
-      toast.error(proofError);
+    if (error) {
+      toast.error(error);
     }
-  }, [proofError]);
+  }, [error]);
 
   const formatAddress = (address: string) => {
     if (!address) {
@@ -49,9 +38,8 @@ export function TonConnectButton() {
   const handleConnect = async () => {
     try {
       await connect();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to open TON Connect modal.';
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to open TON Connect modal.';
       toast.error(message);
     }
   };
@@ -59,9 +47,8 @@ export function TonConnectButton() {
   const handleDisconnect = async () => {
     try {
       await disconnect();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to disconnect wallet.';
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to disconnect wallet.';
       toast.error(message);
     }
   };
@@ -77,15 +64,15 @@ export function TonConnectButton() {
       setCopied(true);
       toast.success('Address copied!');
       setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy wallet address:', error);
+    } catch (err) {
+      console.error('Failed to copy wallet address:', err);
       toast.error('Unable to copy address. Please try again.');
     }
   };
 
-  const isBusy = isConnecting || isVerifying;
+  const isBusy = status === 'connecting' || status === 'verifying';
 
-  if (isConnected && wallet) {
+  if (wallet && status === 'ready') {
     return (
       <div className="space-y-2">
         <div className="flex items-center gap-2">
@@ -116,36 +103,6 @@ export function TonConnectButton() {
     );
   }
 
-  if (hasWalletConnection) {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="flex-1 bg-white/5 rounded-lg px-3 py-2.5 border border-white/10">
-            <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">
-              {isVerifying ? 'Verifying proof' : 'Awaiting proof'}
-            </p>
-            <p className="text-white text-sm font-mono">{formatAddress(resolvedAddress)}</p>
-          </div>
-          <Button
-            onClick={handleDisconnect}
-            variant="ghost"
-            size="sm"
-            className="bg-[#FF0033]/20 hover:bg-[#FF0033]/30 text-[#FF0033] h-[54px] px-3"
-          >
-            <LogOut size={16} />
-          </Button>
-        </div>
-        <p
-          className={`text-xs ${proofError ? 'text-[#FF0033]' : 'text-white/60'}`}
-        >
-          {proofError
-            ? 'Proof verification failed. Disconnect and try again.'
-            : 'Approve the proof request in your wallet to complete sign-in.'}
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-2">
       <Button
@@ -158,11 +115,15 @@ export function TonConnectButton() {
         ) : (
           <Wallet size={16} className="mr-2" />
         )}
-        {isVerifying ? 'Verifying proof...' : isConnecting ? 'Connecting...' : 'Connect TON Wallet'}
+        {status === 'verifying'
+          ? 'Verifying proof...'
+          : status === 'connecting'
+            ? 'Connecting...'
+            : 'Connect TON Wallet'}
       </Button>
-      {proofError && (
+      {error && (
         <p className="text-xs text-[#FF0033] text-center">
-          {proofError}
+          {error}
         </p>
       )}
     </div>

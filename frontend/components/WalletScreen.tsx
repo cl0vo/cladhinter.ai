@@ -21,6 +21,7 @@ import { useApi } from '../hooks/useApi';
 import { useTonConnect } from '../hooks/useTonConnect';
 import { BOOSTS, energyToTon } from '@shared/config/economy';
 import type { PaymentStatusResponse } from '../types';
+import type { LedgerHistoryEntry } from '../utils/api/sqlClient';
 
 interface OrderResponse {
   order_id: string;
@@ -89,8 +90,9 @@ export function WalletScreen() {
     registerTonPayment: registerTonPaymentRpc,
     getPaymentStatus: getPaymentStatusRpc,
     retryPayment: retryPaymentRpc,
+    getLedgerHistory: getLedgerHistoryRpc,
   } = useApi();
-  const { sendTransaction, isConnected, wallet, connect } = useTonConnect();
+  const { sendTransaction, wallet, connect, status } = useTonConnect();
 
   const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
@@ -98,6 +100,11 @@ export function WalletScreen() {
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatusResponse | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [isRetryingVerification, setIsRetryingVerification] = useState(false);
+  const [transactions, setTransactions] = useState<LedgerHistoryEntry[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  const isConnected = Boolean(wallet && status === 'ready');
 
   const balance = userData?.energy || 0;
   const balanceInTon = energyToTon(balance);
@@ -284,40 +291,47 @@ export function WalletScreen() {
           ...(payloadForWallet ? { payload: payloadForWallet } : {}),
         });
 
-        if (txResult) {
-          toast.success('Transaction sent! Confirming boost...');
-
-          const registered = await registerTonPaymentRpc({
-            orderId: orderData.order_id,
-            wallet: wallet.rawAddress || wallet.address,
-            amount: orderData.amount,
-            boc: txResult.boc,
-          });
-
-          if (!registered) {
-            toast.error('Unable to register TON payment. You can retry verification from the pending payment section.');
-            setPendingOrder(orderData);
-            return;
-          }
-
+        if (!txResult?.boc) {
+          toast.warning('Transaction sent. Waiting for wallet confirmation...');
           setPendingOrder(orderData);
           await fetchPaymentStatus(orderData.order_id);
+          return;
+        }
 
-          // Confirm payment on server
-          const result = await confirmOrderRpc({
-            userId: user.id,
-            orderId: orderData.order_id,
-            txHash: txResult.boc,
-          });
+        const boc = txResult.boc;
 
-          if (result) {
-            toast.success(`${orderData.boost_name} boost activated! x${result.multiplier} multiplier`);
-            await refreshBalance();
+        toast.success('Transaction sent! Confirming boost...');
 
-            const statusAfterConfirm = await fetchPaymentStatus(orderData.order_id);
-            if (statusAfterConfirm?.status === 'paid') {
-              setPendingOrder(null);
-            }
+        const registered = await registerTonPaymentRpc({
+          orderId: orderData.order_id,
+          wallet: wallet.rawAddress || wallet.address,
+          amount: orderData.amount,
+          boc,
+        });
+
+        if (!registered) {
+          toast.error('Unable to register TON payment. You can retry verification from the pending payment section.');
+          setPendingOrder(orderData);
+          return;
+        }
+
+        setPendingOrder(orderData);
+        await fetchPaymentStatus(orderData.order_id);
+
+        const result = await confirmOrderRpc({
+          userId: user.id,
+          orderId: orderData.order_id,
+          txHash: boc,
+        });
+
+        if (result) {
+          toast.success(`${orderData.boost_name} boost activated! x${result.multiplier} multiplier`);
+          await refreshBalance();
+          await loadLedgerHistory();
+
+          const statusAfterConfirm = await fetchPaymentStatus(orderData.order_id);
+          if (statusAfterConfirm?.status === 'paid') {
+            setPendingOrder(null);
           }
         }
       } catch (txError) {
@@ -349,11 +363,10 @@ export function WalletScreen() {
       toast.success(`${pendingOrder.boost_name} boost activated! x${result.multiplier} multiplier`);
       setPendingOrder(null);
       await refreshBalance();
+      await loadLedgerHistory();
 
       const status = await fetchPaymentStatus(orderId);
-      if (!status) {
-        setPaymentStatus(null);
-      }
+      setPaymentStatus(status ?? null);
     }
   };
 

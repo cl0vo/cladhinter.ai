@@ -16,24 +16,18 @@ function createAuthUserId(address: string) {
 }
 
 export function useAuth() {
-  const { wallet, isVerifying } = useTonConnect();
+  const { wallet, status } = useTonConnect();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (isVerifying) {
+    if (status === 'verifying' || status === 'connecting') {
       setLoading(true);
       return;
     }
 
     if (wallet) {
-      if (!wallet.accessToken) {
-        console.warn('Wallet connection missing access token');
-        setLoading(true);
-        return;
-      }
-
-      const authId = wallet.userId ?? createAuthUserId(wallet.rawAddress || wallet.address);
+      const authId = wallet.userId || createAuthUserId(wallet.rawAddress || wallet.address);
       const accessToken = wallet.accessToken;
 
       setUser((prevUser) => {
@@ -63,7 +57,7 @@ export function useAuth() {
     }
 
     setLoading(false);
-  }, [wallet, isVerifying]);
+  }, [wallet, status]);
 
   return { user, loading };
 }

@@ -48,3 +48,10 @@ Run `npm run lint && npm run test` before committing. Keep backend services pure
 - When touching both workspaces, ensure types remain in sync—extend `backend/src/types` and reuse them in the frontend via the `@shared` alias when possible.
 
 Happy hacking! 🛠️
+
+## TON Connect integration (2025-10-29 refresh)
+- **Source of truth:** `frontend/hooks/useTonConnect.tsx` owns connection state. It wraps `@tonconnect/ui-react`, requests `tonProof` payloads from `/api/wallet/proof/start`, forwards proofs to `/api/wallet/proof/finish`, and caches `{wallet,userId,token}` in `localStorage`.
+- **UI surface:** `TonConnectButton` only consumes the hook (`status`, `wallet`, `error`, `connect`, `disconnect`). Reuse the same API for other screens instead of reading TonConnect UI state directly.
+- **Backend verifier:** `backend/src/services/walletProofService.ts` stores proof sessions in Postgres, rebuilds the message per [docs.ton.org](https://docs.ton.org/v3/guidelines/ton-connect/verifying-signed-in-users), resolves the public key from `state_init` (or the live chain), and issues HMAC-signed access tokens persisted in `wallet_tokens`.
+- **Domain safety:** the service normalises origins from `TON_PROOF_ALLOWED_DOMAINS`, CORS, manifest URLs and the request headers. The `/api/wallet/proof/start` handler adds the caller’s origin automatically, so you rarely need to touch envs outside production.
+- **Session usage:** downstream APIs keep using `verifyAccessToken` and expect a bearer token. `useAuth` adapts the Ton Connect context into `{userId,address,token}` for the rest of the app.

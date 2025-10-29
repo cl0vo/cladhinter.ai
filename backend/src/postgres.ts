@@ -127,10 +127,12 @@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
       nonce_hash TEXT PRIMARY KEY,
       user_id TEXT,
       wallet TEXT,
+      domain TEXT,
       ttl TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+  await executor.query(`ALTER TABLE wallet_sessions ADD COLUMN IF NOT EXISTS domain TEXT;`);
   await executor.query(`
     CREATE TABLE IF NOT EXISTS wallet_tokens (
       token_hash TEXT PRIMARY KEY,

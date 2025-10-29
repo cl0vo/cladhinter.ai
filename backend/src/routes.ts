@@ -81,11 +81,59 @@ function sanitizeAuthFields(body: Record<string, unknown> | null | undefined): v
   }
 }
 
+function toSingleHeaderValue(value: string | string[] | undefined): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    const [first] = value;
+    return typeof first === 'string' ? first : null;
+  }
+  return null;
+}
+
+function extractDomainCandidate(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const tryParse = (input: string): string | null => {
+    try {
+      const url = new URL(input);
+      if (url.host) {
+        return url.host;
+      }
+    } catch {
+      // ignore parsing failures
+    }
+    return null;
+  };
+
+  const parsedDirect = tryParse(trimmed);
+  if (parsedDirect) {
+    return parsedDirect;
+  }
+
+  if (!trimmed.includes('://')) {
+    const parsedWithScheme = tryParse(`https://${trimmed}`);
+    if (parsedWithScheme) {
+      return parsedWithScheme;
+    }
+  }
+
+  const [hostPart] = trimmed.split('/');
+  return hostPart && hostPart.trim() ? hostPart.trim() : null;
+}
+
 function extractAccessToken(
   req: IncomingMessage,
   body: Record<string, unknown> | null | undefined,
 ): string | null {
-  const authHeader = req.headers.authorization;
+  const authHeader = req.headers['authorization'] as string | string[] | undefined;
   if (typeof authHeader === 'string') {
     const [scheme, token] = authHeader.split(' ');
     if (scheme?.toLowerCase() === 'bearer' && token) {
@@ -333,14 +381,28 @@ export function createApiMiddleware(): Middleware {
       }
 
       if (req.method === 'POST' && pathname === '/api/wallet/proof/start') {
-        const body = await readJsonBody<{ userId?: string | null; wallet?: string | null }>(req);
+        const body = await readJsonBody<{
+          userId?: string | null;
+          wallet?: string | null;
+          domain?: string | null;
+        }>(req);
+        const bodyDomain = extractDomainCandidate(body?.domain ?? null);
+        const originDomain = extractDomainCandidate(toSingleHeaderValue(req.headers.origin));
+        const forwardedDomain = extractDomainCandidate(
+          toSingleHeaderValue(req.headers['x-forwarded-host'] as string | string[] | undefined),
+        );
+        const hostDomain = extractDomainCandidate(toSingleHeaderValue(req.headers.host));
+        const resolvedDomain = originDomain ?? forwardedDomain ?? bodyDomain ?? hostDomain ?? null;
+
         console.log('[wallet-proof] start', {
           userId: body?.userId ?? null,
           wallet: body?.wallet ?? null,
+          domain: resolvedDomain,
         });
         const result = await startWalletProofSession({
           userId: body?.userId ?? null,
           wallet: body?.wallet ?? null,
+          domain: resolvedDomain,
         });
         sendJson(res, 200, result);
         return;
