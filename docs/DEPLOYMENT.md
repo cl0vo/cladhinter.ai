@@ -41,6 +41,7 @@ Environment variables required by the backend:
 6. (Optional) Configure auto-deploy and a free tier cron job if you want to keep the instance warm.
 
 Render will expose a URL like `https://cladhunter-api.onrender.com`. Keep that value for the frontend.
+The client obtains anonymous sessions via `POST /api/auth/anonymous`; every subsequent request must include the issued `Authorization` bearer token and `X-User-ID` header.
 
 ---
 
