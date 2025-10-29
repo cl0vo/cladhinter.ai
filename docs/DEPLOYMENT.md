@@ -51,8 +51,8 @@ The client obtains anonymous sessions via `POST /api/auth/anonymous`; every subs
 ## 3. Frontend (Vercel)
 
 1. Import the repository into Vercel as a project.
-2. Set the **Build Command** to `npm run build:frontend`.
-3. Set the **Output Directory** to `frontend/dist`.
+2. Set the **Build Command** to `npm run build:frontend` (defaults to the repo `vercel.json`).
+3. Set the **Output Directory** to `frontend/dist` (auto-detected via `frontend/vercel.json` when using the workspace root).
 4. Configure environment variables:
 
 | Variable | Value | Notes |
@@ -60,6 +60,8 @@ The client obtains anonymous sessions via `POST /api/auth/anonymous`; every subs
 | `VITE_BACKEND_URL` | `https://cladhunter-api.onrender.com` | The Render service URL (no trailing slash) |
 
 5. Redeploy. Vercel will inject the `VITE_BACKEND_URL` into the build so that the client talks to the Render API.
+
+> Note: The build currently emits a single ~750 kB JS chunk. Vercel logs a warning about the size, but no action is required unless you want to introduce manual chunking or dynamic imports.
 
 During local development you can override the backend URL by editing `frontend/.env`.
 

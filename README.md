@@ -127,8 +127,8 @@ Use the templates in `backend/.env.example` and `frontend/.env.example`.
    - Set env vars listed above
    - Health-check: `/api/health`
 3. **Vercel** – Project:
-   - Build: `npm run build:frontend`
-   - Output: `frontend/dist`
+   - Build: `npm run build:frontend` (defaults to repo `vercel.json`)
+   - Output: `frontend/dist` (auto-detected via `frontend/vercel.json`)
    - Env: `VITE_BACKEND_URL=https://<render-service>.onrender.com`
 4. Smoke test after deploy: `/api/health`, `/api/auth/anonymous`, mining flow, reward claim, TON webhook.
 
@@ -151,6 +151,7 @@ Detailed walkthrough → [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - ✅ Anonymous session tokens & global rate limiting
 - ✅ Tonapi verification + webhook handler for TON payments
 - ✅ Shared config, cleaned documentation
+- ✅ Frontend build verified live on Vercel (monorepo configs committed)
 - ⚠️ Webhook source and monitoring still require production wiring
 
 Ready for deployment following the steps above. Ping the team before starting a roadmap item or adjusting shared configs.
