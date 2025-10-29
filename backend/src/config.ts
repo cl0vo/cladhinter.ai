@@ -6,6 +6,7 @@ const DEFAULT_MERCHANT_WALLET =
   'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ';
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX = 120;
+const DEFAULT_TON_API_BASE_URL = 'https://tonapi.io';
 
 function parseInteger(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -59,6 +60,16 @@ export function getRateLimitConfig(): { windowMs: number; max: number } {
     ),
     max: parsePositiveInteger(process.env.API_RATE_LIMIT_MAX, DEFAULT_RATE_LIMIT_MAX),
   };
+}
+
+export function getTonApiConfig(): { baseUrl: string; apiKey?: string } {
+  const baseUrl = process.env.TON_API_BASE_URL?.trim() || DEFAULT_TON_API_BASE_URL;
+  const apiKey = process.env.TON_API_KEY?.trim() || undefined;
+  return { baseUrl, apiKey };
+}
+
+export function getTonWebhookSecret(): string | null {
+  return process.env.TON_WEBHOOK_SECRET?.trim() || null;
 }
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = parseInteger(value, fallback);

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { customAlphabet } from 'nanoid';
-import type { QueryResultRow } from 'pg';
+import type { PoolClient, QueryResultRow } from 'pg';
 
 import { adCreatives } from '@shared/config/ads';
 import {
@@ -15,6 +15,7 @@ import { getActivePartners, getPartnerById } from '@shared/config/partners';
 
 import { getMerchantWalletAddress } from '../config';
 import { query, withConnection, withTransaction, type SqlExecutor } from '../db';
+import { verifyTonTransfer } from './tonService';
 
 const nanoId = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 24);
 
@@ -47,6 +48,12 @@ interface OrderRow extends QueryResultRow {
   tx_hash: string | null;
   created_at: Date | string;
   paid_at: Date | string | null;
+}
+
+interface OrderSettlementResult {
+  boost_level: number;
+  boost_expires_at: string | null;
+  multiplier: number;
 }
 
 interface RewardClaimRow extends QueryResultRow {
@@ -139,6 +146,42 @@ async function upsertUser(executor: SqlExecutor, userId: string): Promise<UserEn
     [userId, now.toISOString()],
   );
   return mapUserRow(inserted.rows[0]);
+}
+
+async function settleOrderPayment(
+  client: PoolClient,
+  order: OrderRow,
+  txHash: string | null,
+): Promise<OrderSettlementResult> {
+  const boost = findBoost(order.boost_level);
+  const now = new Date();
+  const expiresAt = boost.durationDays
+    ? new Date(now.getTime() + boost.durationDays * 24 * 60 * 60 * 1000)
+    : null;
+
+  await client.query(
+    `UPDATE orders
+       SET status = 'paid',
+           tx_hash = COALESCE($3, tx_hash),
+           paid_at = $2
+     WHERE id = $1`,
+    [order.id, now.toISOString(), txHash],
+  );
+
+  await client.query(
+    `UPDATE users
+       SET boost_level = $2,
+           boost_expires_at = $3,
+           updated_at = $4
+     WHERE id = $1`,
+    [order.user_id, boost.level, expiresAt ? expiresAt.toISOString() : null, now.toISOString()],
+  );
+
+  return {
+    boost_level: boost.level,
+    boost_expires_at: expiresAt ? expiresAt.toISOString() : null,
+    multiplier: boostMultiplier(boost.level),
+  };
 }
 
 function resetDailyCountersIfNeeded(user: UserEntity, now: Date): UserEntity {
@@ -426,35 +469,67 @@ export async function confirmOrder({
       };
     }
 
-    const boost = findBoost(row.boost_level);
-    const now = new Date();
-    const expiresAt = boost.durationDays
-      ? new Date(now.getTime() + boost.durationDays * 24 * 60 * 60 * 1000)
-      : null;
+    if (txHash) {
+      const verified = await verifyTonTransfer({
+        txHash,
+        amountTon: row.ton_amount,
+        destination: row.address,
+      });
+      if (!verified) {
+        throw new Error('TON transfer not verified');
+      }
+    }
 
-    await client.query(
-      `UPDATE orders
-         SET status = 'paid',
-             tx_hash = $3,
-             paid_at = $2
-       WHERE id = $1`,
-      [orderId, now.toISOString(), txHash ?? null],
-    );
-
-    await client.query(
-      `UPDATE users
-         SET boost_level = $2,
-             boost_expires_at = $3,
-             updated_at = $4
-       WHERE id = $1`,
-      [userId, boost.level, expiresAt ? expiresAt.toISOString() : null, now.toISOString()],
-    );
-
+    const settlement = await settleOrderPayment(client, row, txHash ?? null);
     return {
       success: true,
-      boost_level: boost.level,
-      boost_expires_at: expiresAt ? expiresAt.toISOString() : null,
-      multiplier: boostMultiplier(boost.level),
+      ...settlement,
+    };
+  });
+}
+
+export async function registerTonWebhookPayment({
+  orderId,
+  txHash,
+  amountTon,
+}: {
+  orderId: string;
+  txHash: string;
+  amountTon?: number;
+}) {
+  return withTransaction(async (client) => {
+    const orderResult = await client.query<OrderRow>(
+      `SELECT * FROM orders WHERE id = $1 FOR UPDATE`,
+      [orderId],
+    );
+    const row = orderResult.rows[0];
+    if (!row) {
+      throw new Error('Order not found');
+    }
+
+    if (row.status === 'paid') {
+      return {
+        success: true,
+        boost_level: row.boost_level,
+        boost_expires_at: row.paid_at ? new Date(row.paid_at).toISOString() : null,
+        multiplier: boostMultiplier(row.boost_level),
+      };
+    }
+
+    const verified = await verifyTonTransfer({
+      txHash,
+      amountTon: amountTon ?? row.ton_amount,
+      destination: row.address,
+    });
+
+    if (!verified) {
+      throw new Error('TON transfer not verified');
+    }
+
+    const settlement = await settleOrderPayment(client, row, txHash);
+    return {
+      success: true,
+      ...settlement,
     };
   });
 }

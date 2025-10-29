@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { getTonWebhookSecret } from '../config';
 import { createAnonymousSession, verifyAccessToken } from './services/authService';
 import {
   claimReward,
@@ -12,6 +13,7 @@ import {
   getUserBalance,
   getUserStats,
   initUser,
+  registerTonWebhookPayment,
 } from './services/userService';
 
 type AuthenticatedRequest = Request & { userId: string; accessToken: string };
@@ -36,6 +38,46 @@ router.post('/auth/anonymous', (_req, res, next) => {
       res.status(201).json(session);
     })
     .catch(next);
+});
+
+router.post('/payments/ton/webhook', (req, res, next) => {
+  (async () => {
+    const secret = getTonWebhookSecret();
+    if (secret) {
+      const provided = req.header('x-webhook-secret')?.trim();
+      if (provided !== secret) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+    }
+
+    const schema = z.object({
+      order_id: z.string().min(1).optional(),
+      orderId: z.string().min(1).optional(),
+      tx_hash: z.string().min(1).optional(),
+      txHash: z.string().min(1).optional(),
+      amount_ton: z.number().positive().optional(),
+      amountTon: z.number().positive().optional(),
+    });
+
+    const parsed = schema.parse(req.body ?? {});
+    const orderId = parsed.orderId ?? parsed.order_id;
+    const txHash = parsed.txHash ?? parsed.tx_hash;
+    const amountTon = parsed.amountTon ?? parsed.amount_ton;
+
+    if (!orderId || !txHash) {
+      res.status(400).json({ error: 'Missing orderId or txHash' });
+      return;
+    }
+
+    const result = await registerTonWebhookPayment({
+      orderId,
+      txHash,
+      amountTon,
+    });
+
+    res.json(result);
+  })().catch(next);
 });
 
 router.use((req: AuthenticatedRequest, res, next) => {

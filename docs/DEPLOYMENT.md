@@ -26,6 +26,9 @@ Environment variables required by the backend:
 | `PORT` | `4000` | Render overrides with its own port |
 | `API_RATE_LIMIT_WINDOW_MS` | `60000` | Optional, per-IP window in ms |
 | `API_RATE_LIMIT_MAX` | `120` | Optional, max requests per window |
+| `TON_API_BASE_URL` | `https://tonapi.io` | TON explorer base URL |
+| `TON_API_KEY` | `tonapi_...` | Bearer token for Tonapi (recommended) |
+| `TON_WEBHOOK_SECRET` | `super-secret` | Shared secret for webhook endpoint |
 
 > Keep a copy of the connection string handy; you will paste it into Render.
 

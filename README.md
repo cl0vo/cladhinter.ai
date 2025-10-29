@@ -72,6 +72,7 @@ The React hook `useAuth()` handles session bootstrap and persistence (`localStor
 | POST   | `/api/rewards/claim`       | Claim partner reward                   |
 | POST   | `/api/orders/create`       | Create TON boost order                 |
 | POST   | `/api/orders/:id/confirm`  | Confirm TON boost payment (manual)     |
+| POST   | `/api/payments/ton/webhook` | Render-facing TON webhook (requires secret) |
 
 Response contracts are defined in `frontend/types/index.ts` and implemented under `backend/src/services/userService.ts`.
 
@@ -111,6 +112,9 @@ The frontend automatically resolves `http://localhost:4000/api` when `VITE_BACKE
 | `MERCHANT_WALLET` | `UQ…JKZ` | TON wallet receiving boost payments |
 | `API_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window per IP (ms) |
 | `API_RATE_LIMIT_MAX` | `120` | Requests allowed per window |
+| `TON_API_BASE_URL` | `https://tonapi.io` | TON API host (optional) |
+| `TON_API_KEY` | – | Bearer token for Tonapi (recommended) |
+| `TON_WEBHOOK_SECRET` | – | Shared secret for TON webhook endpoint |
 | `VITE_BACKEND_URL` *(frontend)* | optional | Force backend URL during build/runtime |
 
 Sample files: `backend/.env.example`, `frontend/.env.example`.

@@ -1,171 +1,204 @@
-# Cladhunter – Internal Developer Handbook (2025.10)
+# Cladhunter • Engineer Handbook (October 2025)
 
-Гайд собран для разработчиков, которые работают с актуальной версией продукта (React/Vite frontend + Express/Postgres backend). Читайте перед любой правкой: здесь описана архитектура, командами, запреты и порядок деплоя.
-
----
-
-## 1. Архитектура и стек
-
-| Слой       | Технологии                                    | Хостинг |
-|------------|-----------------------------------------------|---------|
-| Frontend   | React 18, TypeScript, Vite, Tailwind, TonConnect UI | Vercel  |
-| Backend    | Node 18, Express, Zod, pg, express-rate-limit | Render  |
-| Database   | Neon PostgreSQL                               | Neon    |
-| Shared     | TypeScript-конфиги ads/economy/partners       | –       |
-
-Auth реализован через анонимные сессии: API выдаёт `userId` + `accessToken`, фронт обязан отправлять `Authorization: Bearer` и `X-User-ID`.
+Welcome aboard! This guide keeps the crew aligned on the live architecture, code conventions, deployment flow, and roadmap. Read it before touching the repo — it has changed a lot from the old Supabase stack.
 
 ---
 
-## 2. Структура репозитория
+## 1. Architecture Snapshot
+
+| Layer     | Stack                                            | Hosting |
+|-----------|--------------------------------------------------|---------|
+| Frontend  | React 18, TypeScript, Vite, Tailwind, TonConnect | Vercel  |
+| Backend   | Node 18, Express, Zod, pg, express-rate-limit    | Render  |
+| Database  | PostgreSQL                                       | Neon    |
+| Shared    | TypeScript config (ads / economy / partners)     | –       |
+
+- **Sessions**: Anonymous tokens issued by the API (`/api/auth/anonymous`).  
+- **Auth headers**: Every protected route expects `Authorization: Bearer <token>` and `X-User-ID: <id>`.  
+- **Data sync**: Ads, boosts, partners live in `shared/` and are consumed by both layers.
+
+---
+
+## 2. Repository Layout
 
 ```
 .
 ├── backend/
-│   ├── src/config.ts           # окружение (HTTP, DB, CORS, rate-limit)
-│   ├── src/db.ts               # пул pg + миграции (users, watch_logs, user_tokens…)
-│   ├── src/routes.ts           # маршруты /api/*
-│   └── src/services/           # бизнес-логика (authService, userService …)
+│   ├── src/config.ts           # HTTP / DB / CORS / rate-limit / TON config
+│   ├── src/db.ts               # pg pool + schema migrations
+│   ├── src/routes.ts           # REST routes (/api/*)
+│   └── src/services/           # authService, userService, tonService, etc.
 ├── frontend/
-│   ├── App.tsx                 # входная точка (экраны Mining/Stats/Wallet)
-│   ├── hooks/                  # useAuth, useApi, useUserData и т.д.
-│   ├── components/             # UI + шадCN-обёртки (не менять имена)
-│   └── utils/api/client.ts     # резолвер BACKEND URL + fetch обёртка
-├── shared/config/              # общие конфиги ads/economy/partners
-└── docs/DEPLOYMENT.md          # инструкция по деплою Vercel + Render + Neon
+│   ├── App.tsx                 # Mining / Stats / Wallet container
+│   ├── hooks/                  # useAuth, useApi, useUserData, useTonConnect
+│   ├── components/             # UI blocks (shadcn-based)
+│   └── utils/api/client.ts     # Backend request helper + base URL resolver
+├── shared/config/              # Ads / economy / partner definitions
+└── docs/DEPLOYMENT.md          # Step-by-step Vercel + Render + Neon deploy
 ```
 
-Supabase Edge функции, старые proof-script’ы и связанные директории удалены — любые упоминания Supabase устарели.
+Legacy Supabase/Deno code has been removed — do not reintroduce it.
 
 ---
 
-## 3. Быстрый старт (локально)
+## 3. Local Development Cheat Sheet
 
 ```bash
-npm install                                # корень, поднимет workspaces
-cp backend/.env.example backend/.env       # вписать DATABASE_URL, MERCHANT_WALLET и т.д.
-cp frontend/.env.example frontend/.env     # переопределить VITE_BACKEND_URL при необходимости
-npm run dev:backend                        # Express API на 4000
-npm run dev:frontend                       # Vite dev server на 5173
+npm install                                # installs workspace deps
+cp backend/.env.example backend/.env       # set DATABASE_URL, MERCHANT_WALLET, TON vars
+cp frontend/.env.example frontend/.env     # optional: override VITE_BACKEND_URL
+npm run dev:backend                        # Express API on http://localhost:4000
+npm run dev:frontend                       # Vite dev server on http://localhost:5173
 ```
 
-`VITE_BACKEND_URL` не обязателен: фронт сам подставит `http://localhost:4000/api`, если переменная не указана.
+If `VITE_BACKEND_URL` is omitted, the client auto-targets `http://localhost:4000/api`.
 
 ---
 
-## 4. API-гайд
+## 4. Environment Variables
 
-### Аутентификация
-1. `POST /api/auth/anonymous` → `{ userId, accessToken }`.
-2. Все прочие запросы передают заголовки:
-   - `Authorization: Bearer <accessToken>`
-   - `X-User-ID: <userId>`
-3. Токены хранятся в таблице `user_tokens`, обновляется `last_used_at`.
+### backend/.env
+- `DATABASE_URL` – Neon connection string (`sslmode=require` mandatory).
+- `HOST` / `PORT` – Render overrides port in production.
+- `CORS_ALLOWED_ORIGINS` – comma separated allow-list.
+- `MERCHANT_WALLET` – TON wallet receiving boost payments.
+- `API_RATE_LIMIT_WINDOW_MS` / `API_RATE_LIMIT_MAX` – per-IP rate limiting.
+- `TON_API_BASE_URL` – Tonapi host (defaults to `https://tonapi.io`).
+- `TON_API_KEY` – Tonapi bearer token (recommended to avoid public limits).
+- `TON_WEBHOOK_SECRET` – shared secret expected in `x-webhook-secret`.
 
-### Основные эндпоинты
-| Метод | URL                         | Описание                       |
-|-------|----------------------------|--------------------------------|
-| POST  | `/api/auth/anonymous`      | Выдать анонимную сессию        |
-| GET   | `/api/health`              | Health-check Render            |
-| POST  | `/api/user/init`           | Инициализация пользователя     |
-| GET   | `/api/user/balance`        | Баланс, текущий буст           |
-| GET   | `/api/stats`               | Статистика, история просмотров |
-| POST  | `/api/ads/complete`        | Учёт просмотра рекламы         |
-| GET   | `/api/rewards/status`      | Статус партнёрских наград      |
-| POST  | `/api/rewards/claim`       | Зачисление награды партнёра    |
-| POST  | `/api/orders/create`       | Создать заказ буста            |
-| POST  | `/api/orders/:id/confirm`  | Подтвердить оплату буста       |
+### frontend/.env
+- `VITE_BACKEND_URL` – explicit API base (Render URL), overrides auto-detect.
 
-Ответы типизированы в `frontend/types/index.ts`. Любые изменения API должны быть отражены там же.
+Restart the corresponding dev server whenever you change `.env`.
 
 ---
 
-## 5. Конвенции фронтенда
+## 5. API Reference
 
-- Все запросы идут через `useApi` + `apiRequest`.
-- Хук `useAuth` управляет сессией, не генерируйте ID вручную.
-- Компоненты UI берём из `components/ui/*` (шадCN), структуру файлов не менять.
-- Toast — `sonner`, иконки — `lucide-react`, анимации — `motion`.
-- Tailwind-тема задаётся в `frontend/tailwind.config.ts` и `styles/globals.css`.
-- Любые новые страницы придерживаются мобильного-first дизайна.
+1. `POST /api/auth/anonymous` → `{ userId, accessToken }`
+2. Include `Authorization` + `X-User-ID` headers on every subsequent request.
+3. Tokens are hashed in `user_tokens`, `last_used_at` updates automatically.
+4. Rate limiting is global (see `API_RATE_LIMIT_*`).
 
----
+| Method | Route                         | Purpose                                |
+|--------|------------------------------|----------------------------------------|
+| POST   | `/api/auth/anonymous`        | Issue anonymous session token          |
+| GET    | `/api/health`                | Render health probe                    |
+| POST   | `/api/user/init`             | Initialise counters & session log      |
+| GET    | `/api/user/balance`          | Energy, boost level, multiplier        |
+| GET    | `/api/stats`                 | Mining statistics + watch history      |
+| POST   | `/api/ads/complete`          | Register an ad watch                   |
+| GET    | `/api/rewards/status`        | Claimed partner rewards list           |
+| POST   | `/api/rewards/claim`         | Grant partner reward                   |
+| POST   | `/api/orders/create`         | Create TON boost order                 |
+| POST   | `/api/orders/:id/confirm`    | Manual confirmation (user-driven)      |
+| POST   | `/api/payments/ton/webhook`  | Render-facing TON webhook (secret req) |
 
-## 6. Конвенции бекенда
-
-- Валидация входящих данных через `zod` (см. `backend/src/routes.ts`).
-- Запросы в БД исключительно через `db.ts` (`query`, `withTransaction`).
-- Новые таблицы добавлять в `runSchemaMigrations`.
-- Rate limiting управляется `API_RATE_LIMIT_*` (конфиг уже подключён в `server.ts`).
-- Логи — только `console` (Render сохраняет stdout/stderr).
-- Ошибки возвращаем в формате `{ error: "message" }`.
-
----
-
-## 7. Shared-конфиги
-
-- `shared/config/ads.ts` – список рекламных креативов.
-- `shared/config/economy.ts` – бусты, рейты, лимиты.
-- `shared/config/partners.ts` – партнёрские кампании и награды.
-
-Правки должны учитывать, что эти данные используются и фронтом, и бэком: не меняйте типы без синхронного обновления.
+Contracts live in `frontend/types/index.ts`. Update both client and server when adding fields.
 
 ---
 
-## 8. Предупреждения и запреты
+## 6. Frontend Conventions
 
-**Запрещено:**
-- Вносить обратно Supabase / Deno код — он больше не используется.
-- Менять структуру `components/ui` и `shared/config` без обсуждения.
-- Коммитить реальные `.env` (используйте `.env.example`).
-- Добавлять нестабильные пакеты без согласования.
-- Изменять логику сессий (анонимные токены) без обновления `useAuth` и `authService`.
-
-**Осторожно:** таблицы создаются автоматически при старте API; на проде лучше применить миграции вручную (см. Deployment).
+- All network calls go through `useApi` (`frontend/hooks/useApi.tsx`).
+- `useAuth` manages session lifecycle — never mint IDs on the client.
+- UI components come from `components/ui/*` (shadcn). Keep filenames and exports consistent.
+- Toasts → `sonner`, icons → `lucide-react`, animations → `motion`.
+- Tailwind theme resides in `frontend/tailwind.config.ts` and `styles/globals.css`.
+- Maintain mobile-first layout (safe area, touch targets, haptics).
 
 ---
 
-## 9. Тестирование и контроль качества
+## 7. Backend Conventions
 
-Автотестов нет — проверяем вручную:
-1. `npm run dev:backend`, `npm run dev:frontend`.
-2. Залогиниться (тон-коннект опционально, но кнопки должны работать).
-3. Пройти флоу: запуск майнинга, начисление энергии, просмотр статистики, покупка буста (ручное подтверждение).
-4. Проверить ограничения: лимит просмотров, cooldown, rate-limit (при необходимости).
-
-Перед деплоем убедитесь, что README и docs не устарели.
-
----
-
-## 10. Деплой (Vercel + Render + Neon)
-
-Кратко:
-1. **Neon** – создать базу, взять URL с `sslmode=require`.
-2. **Render** – Web Service, build `npm install && npm run build:backend`, start `npm run start:backend`, скопировать env из `backend/.env.example`, health-check `/api/health`.
-3. **Vercel** – build `npm run build:frontend`, output `frontend/dist`, задать `VITE_BACKEND_URL`.
-4. После деплоя прогнать smoke-тест: `/api/health`, `/api/auth/anonymous`, один флоу watch → stats → reward.
-
-Подробности, чек-листы, FAQ: `docs/DEPLOYMENT.md`.
+- Use `zod` for request validation (`backend/src/routes.ts`).
+- DB access goes through `db.ts` (`query`, `withTransaction`).  
+- Schema changes belong in `runSchemaMigrations`; update `user_tokens`, etc. responsibly.
+- TON verification lives in `tonService.ts` — always confirm payments through it.
+- Log with `console`; Render collects stdout/stderr.
+- Return errors as `{ error: "message" }`.
 
 ---
 
-## 11. Roadmap (актуальный)
+## 8. Shared Config Rules
 
-- **TON**: автоматизировать проверку транзакций (webhook/tonapi).
-- **Auth hardening**: подписывать `Telegram initData`, расширять rate-limit при необходимости.
-- **Ads**: интегрировать реальную сеть / медиатор, добавить аналитику.
-- **Admin**: панель управления партнёрами и контентом.
+- `shared/config/ads.ts` — creatives and partner links.
+- `shared/config/economy.ts` — boosts, energy rates, limits.
+- `shared/config/partners.ts` — partner reward catalogue.
 
-Каждый пункт требует обсуждения и планирования перед реализацией.
+Any changes must stay backward compatible or be reflected on both front and back before merge.
 
 ---
 
-## 12. Контрольная памятка
+## 9. Do & Don’t
 
-- **npm install --workspaces** – первая команда после клона.
-- Front на 5173, back на 4000 — используйте раздельные терминалы.
-- Коммиты должны быть осмысленными, сводки — на английском (`feat: …`, `fix: …`).
-- Pull request обязательно содержит описание изменений и шаги проверки.
-- После мержа не забывайте обновлять агентские материалы (README, docs, этот файл).
+**Do**
+- Validate inputs on both sides.
+- Keep PRs focused with descriptive commit messages (`feat: …`, `fix: …`).
+- Update documentation (README, docs/DEPLOYMENT.md, this guide) when behavior changes.
 
-Удачной разработки! Если возникают вопросы по архитектуре — сначала ищите ответ здесь или в `docs/DEPLOYMENT.md`, затем поднимайте обсуждение в канале проекта.
+**Don’t**
+- Revert to Supabase/Deno or invent ad-hoc session logic.
+- Alter `components/ui` structure or shared configs without consensus.
+- Commit real `.env` files or secrets.
+- Introduce external dependencies without review.
+
+---
+
+## 10. Testing & QA
+
+No automated tests yet — run a manual smoke-test:
+1. `npm run dev:backend` + `npm run dev:frontend`.
+2. Request `/api/auth/anonymous` (browser console or frontend boot).
+3. Walk through mining flow: watch → energy increase → stats update.
+4. Issue partner reward claim.
+5. Create boost order and confirm with a TON transaction (manual OK).
+6. Hit `POST /api/payments/ton/webhook` with the shared secret to simulate a webhook.
+
+Report findings in the project channel before merging significant changes.
+
+---
+
+## 11. Deployment Checklist (Vercel + Render + Neon)
+
+1. **Neon** – create DB, copy pooled `DATABASE_URL` (with `sslmode=require`).
+2. **Render** – Web Service:
+   - Build `npm install && npm run build:backend`
+   - Start `npm run start:backend`
+   - Env vars from `backend/.env.example`
+   - Health check `/api/health`
+3. **Vercel** – Project:
+   - Build `npm run build:frontend`
+   - Output `frontend/dist`
+   - Env var `VITE_BACKEND_URL`
+4. Post-deploy smoke:
+   - `/api/health`
+   - `/api/auth/anonymous`
+   - Mining + rewards flow
+   - TON webhook test (`x-webhook-secret` header!)
+
+Detailed instructions, screenshots, and FAQ → `docs/DEPLOYMENT.md`.
+
+---
+
+## 12. Roadmap (active items)
+
+- **TON**: Automate payment verification (webhooks already available, integrate tonapi webhook flow).
+- **Auth hardening**: Validate Telegram `initData`, adjust rate limits if needed.
+- **Ads**: Integrate production network / mediation, expand analytics.
+- **Admin**: Console for managing creatives, boosts, partners.
+
+Discuss scope before starting any roadmap item.
+
+---
+
+## 13. Quick Checklist Before Committing
+
+- `npm install --workspaces` after pulling new deps.
+- Lint & format (respect existing config).
+- Update docs when behavior changes (README, deployment guide, this handbook).
+- Meaningful commit messages, English summaries.
+- Open PR with testing notes, ensure CI (if enabled) is green.
+
+Happy shipping! If something is unclear after reading this handbook and the deployment guide, raise it in the team channel before proceeding.
