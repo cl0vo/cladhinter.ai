@@ -24,6 +24,8 @@ Environment variables required by the backend:
 | `MERCHANT_WALLET` | `UQ...` | TON wallet that receives boost payments |
 | `CORS_ALLOWED_ORIGINS` | `https://cladhunter.vercel.app` | Comma separated list; use `*` for testing |
 | `PORT` | `4000` | Render overrides with its own port |
+| `API_RATE_LIMIT_WINDOW_MS` | `60000` | Optional, per-IP window in ms |
+| `API_RATE_LIMIT_MAX` | `120` | Optional, max requests per window |
 
 > Keep a copy of the connection string handy; you will paste it into Render.
 

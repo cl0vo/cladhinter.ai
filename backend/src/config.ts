@@ -4,6 +4,8 @@ const DEFAULT_PORT = 4000;
 const DEFAULT_HOST = '0.0.0.0';
 const DEFAULT_MERCHANT_WALLET =
   'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ';
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_RATE_LIMIT_MAX = 120;
 
 function parseInteger(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -47,4 +49,18 @@ export function getMerchantWalletAddress(): string {
 
 export function getNodeEnv(): string {
   return process.env.NODE_ENV?.trim() || 'development';
+}
+
+export function getRateLimitConfig(): { windowMs: number; max: number } {
+  return {
+    windowMs: parsePositiveInteger(
+      process.env.API_RATE_LIMIT_WINDOW_MS,
+      DEFAULT_RATE_LIMIT_WINDOW_MS,
+    ),
+    max: parsePositiveInteger(process.env.API_RATE_LIMIT_MAX, DEFAULT_RATE_LIMIT_MAX),
+  };
+}
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = parseInteger(value, fallback);
+  return parsed > 0 ? parsed : fallback;
 }
