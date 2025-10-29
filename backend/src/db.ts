@@ -43,6 +43,21 @@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
       last_session_at TIMESTAMPTZ
     );
   `);
+  await executor.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS energy DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS boost_level INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS boost_expires_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ADD COLUMN IF NOT EXISTS last_watch_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS total_earned DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS total_watches INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS session_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS daily_watch_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS daily_watch_date DATE,
+      ADD COLUMN IF NOT EXISTS last_session_at TIMESTAMPTZ;
+  `);
 
   await executor.query(`
     CREATE TABLE IF NOT EXISTS watch_logs (
@@ -55,6 +70,22 @@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
       multiplier DOUBLE PRECISION NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+  await executor.query(`
+    ALTER TABLE watch_logs
+      ADD COLUMN IF NOT EXISTS ad_type TEXT,
+      ADD COLUMN IF NOT EXISTS base_reward DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS multiplier DOUBLE PRECISION NOT NULL DEFAULT 1;
+  `);
+  await executor.query(`
+    UPDATE watch_logs
+    SET base_reward = reward
+    WHERE base_reward IS NULL OR base_reward = 0;
+  `);
+  await executor.query(`
+    UPDATE watch_logs
+    SET multiplier = 1
+    WHERE multiplier IS NULL OR multiplier = 0;
   `);
   await executor.query(
     `CREATE INDEX IF NOT EXISTS watch_logs_user_created_idx ON watch_logs (user_id, created_at DESC);`,
