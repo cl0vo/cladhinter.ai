@@ -38,18 +38,7 @@ interface TelegramWebApp {
   setBackgroundColor: (color: string) => void;
   enableClosingConfirmation: () => void;
   disableClosingConfirmation: () => void;
-  initData?: string;
-  initDataUnsafe?: {
-    start_param?: string;
-    query_id?: string;
-    user?: {
-      id?: number;
-      username?: string;
-    };
-  };
 }
-
-type TelegramInitData = NonNullable<TelegramWebApp['initDataUnsafe']>;
 
 declare global {
   interface Window {
@@ -163,81 +152,4 @@ export function closeTelegramWebApp() {
   if (webApp) {
     webApp.close();
   }
-}
-
-/**
- * Get raw init data object provided by Telegram, if available.
- */
-export function getTelegramInitData(): TelegramInitData | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  const webApp = window.Telegram?.WebApp;
-  if (!webApp) {
-    return null;
-  }
-
-  if (webApp.initDataUnsafe && Object.keys(webApp.initDataUnsafe).length > 0) {
-    return webApp.initDataUnsafe as TelegramInitData;
-  }
-
-  const raw = webApp.initData;
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const params = new URLSearchParams(raw);
-    const startParam = params.get('start_param') ?? undefined;
-    const userParam = params.get('user');
-    const queryId = params.get('query_id') ?? undefined;
-
-    const parsedUser =
-      userParam && userParam.trim()
-        ? (JSON.parse(userParam) as TelegramInitData['user'])
-        : undefined;
-
-    if (!startParam && !parsedUser && !queryId) {
-      return null;
-    }
-
-    const fallbackInitData: TelegramInitData = {
-      start_param: startParam,
-      query_id: queryId,
-      user: parsedUser,
-    };
-    return fallbackInitData;
-  } catch (error) {
-    console.warn('Failed to parse Telegram init data:', error);
-    return null;
-  }
-}
-
-/**
- * Resolve Telegram user id (string) if app runs in Mini App environment.
- */
-export function getTelegramUserId(): string | null {
-  const initData = getTelegramInitData();
-  if (!initData) {
-    return null;
-  }
-
-  const userId = initData.user?.id;
-  return typeof userId === 'number' || typeof userId === 'string'
-    ? String(userId)
-    : null;
-}
-
-/**
- * Extract start parameter passed via deep-link (used to return to bot).
- */
-export function getTelegramStartParam(): string | null {
-  const initData = getTelegramInitData();
-  if (!initData) {
-    return null;
-  }
-
-  return typeof initData.start_param === 'string' && initData.start_param.trim()
-    ? initData.start_param.trim()
-    : null;
 }

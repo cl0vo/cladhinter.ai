@@ -5,23 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
-    "build": "tsc -p tsconfig.json",
-    "db:indexes": "tsx scripts/create-indexes.ts",
-    "test": "vitest run"
+    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@ton/crypto": "^3.3.0",
-    "@ton/ton": "^16.0.0",
-    "dotenv": "^17.2.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "nanoid": "^5.0.7",
     "pg": "^8.16.3",
-    "tweetnacl": "^1.0.3"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/pg": "^8.15.5",
-    "tsx": "^4.20.6",
-    "typescript": "^5.6.3",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^4.17.21",
     "@types/node": "^20.12.7",
-    "vitest": "^1.6.0"
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.3"
   }
 }

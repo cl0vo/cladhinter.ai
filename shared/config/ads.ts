@@ -27,8 +27,6 @@ export interface AdCreative {
   partnerUrl: string; // Partner website URL (where user is redirected on click)
   partnerName?: string; // Optional partner name for analytics
   duration?: number; // Optional: video duration in seconds (for analytics)
-  priority?: number; // Higher numbers surface first when picking ads
-  countries?: string[]; // Optional whitelist of ISO country codes
 }
 
 /**
@@ -46,8 +44,6 @@ export const adCreatives: AdCreative[] = [
     partnerUrl: 'https://example.com/partner1',
     partnerName: 'Demo Video Partner',
     duration: 15,
-    priority: 5,
-    countries: ['US', 'CA', 'GB'],
   },
   
   // ========================================
@@ -61,8 +57,6 @@ export const adCreatives: AdCreative[] = [
     url: 'https://images.unsplash.com/photo-1633534415766-165181ffdbb7?w=1080&h=1920&fit=crop',
     partnerUrl: 'https://example.com/crypto',
     partnerName: 'Crypto Trading',
-    priority: 4,
-    countries: ['DE', 'CH', 'AT'],
   },
   
   // Gaming Theme
@@ -72,7 +66,6 @@ export const adCreatives: AdCreative[] = [
     url: 'https://images.unsplash.com/photo-1726935037951-d5a5a73b3243?w=1080&h=1920&fit=crop',
     partnerUrl: 'https://example.com/gaming',
     partnerName: 'Mobile Gaming',
-    countries: ['US', 'BR', 'AR'],
   },
   
   // Tech/App Theme
@@ -82,7 +75,6 @@ export const adCreatives: AdCreative[] = [
     url: 'https://images.unsplash.com/photo-1760888549280-4aef010720bd?w=1080&h=1920&fit=crop',
     partnerUrl: 'https://example.com/tech',
     partnerName: 'Tech Solutions',
-    priority: 2,
   },
   
   // ========================================
@@ -112,46 +104,9 @@ export const adCreatives: AdCreative[] = [
 /**
  * Get a random ad from the pool
  */
-export function getEligibleAds(countryCode?: string | null): AdCreative[] {
-  const normalizedCode = countryCode?.trim().toUpperCase() ?? null;
-  const withIndex = adCreatives.map((ad, index) => ({ ad, index }));
-
-  const matching = withIndex.filter(
-    ({ ad }) =>
-      normalizedCode &&
-      Array.isArray(ad.countries) &&
-      ad.countries.some((code) => code.toUpperCase() === normalizedCode),
-  );
-  const generic = withIndex.filter(
-    ({ ad }) => !ad.countries || ad.countries.length === 0,
-  );
-
-  const pool = matching.length > 0 ? [...matching, ...generic] : withIndex;
-
-  const seen = new Set<string>();
-
-  return pool
-    .filter(({ ad }) => {
-      if (seen.has(ad.id)) {
-        return false;
-      }
-      seen.add(ad.id);
-      return true;
-    })
-    .sort((a, b) => {
-      const priorityDiff = (b.ad.priority ?? 0) - (a.ad.priority ?? 0);
-      if (priorityDiff !== 0) {
-        return priorityDiff;
-      }
-      return a.index - b.index;
-    })
-    .map(({ ad }) => ad);
-}
-
-export function getRandomAd(countryCode?: string | null): AdCreative {
-  const eligible = getEligibleAds(countryCode);
-  const randomIndex = Math.floor(Math.random() * eligible.length);
-  return eligible[randomIndex];
+export function getRandomAd(): AdCreative {
+  const randomIndex = Math.floor(Math.random() * adCreatives.length);
+  return adCreatives[randomIndex];
 }
 
 /**
@@ -162,12 +117,3 @@ export const adConfig = {
   trackViews: true, // Track ad views on server
   minViewDuration: 3, // Minimum seconds viewed to count as valid view
 };
-
-const adsConfig = {
-  adCreatives,
-  adConfig,
-  getEligibleAds,
-  getRandomAd,
-};
-
-export default adsConfig;

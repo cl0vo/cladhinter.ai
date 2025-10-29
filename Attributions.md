@@ -1,8 +1,3 @@
-# Attributions
+This Figma Make file includes components from [shadcn/ui](https://ui.shadcn.com/) used under [MIT license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md).
 
-The Cladhunter frontend (see `frontend/`) reuses the following third-party assets:
-
-- [shadcn/ui](https://ui.shadcn.com/) components, licensed under the [MIT License](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md).
-- Photography from [Unsplash](https://unsplash.com) used under the standard [Unsplash License](https://unsplash.com/license).
-
-TON assets referenced by the backend wallet proof flow follow the distribution terms of the TON ecosystem.
+This Figma Make file includes photos from [Unsplash](https://unsplash.com) used under [license](https://unsplash.com/license).

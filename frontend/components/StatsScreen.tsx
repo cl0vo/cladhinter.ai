@@ -9,52 +9,39 @@ import type { UserStatsResponse } from '../types';
 
 export function StatsScreen() {
   const { user } = useAuth();
-  const { getUserStats } = useApi();
+  const { makeRequest } = useApi();
   const [stats, setStats] = useState<UserStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isActive = true;
+    if (user) {
+      fetchStats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-    const loadStats = async () => {
-      if (!user) {
-        if (isActive) {
-          setStats(null);
-          setLoading(false);
-        }
-        return;
-      }
+  const fetchStats = async () => {
+    if (!user) return;
 
-      setLoading(true);
-      const data = await getUserStats({ userId: user.id });
+    setLoading(true);
+    const data = await makeRequest<UserStatsResponse>(
+      '/stats', 
+      { method: 'GET' }, 
+      user.accessToken, 
+      user.id
+    );
+    if (data) {
+      setStats(data);
+    }
+    setLoading(false);
+  };
 
-      if (data && isActive) {
-        setStats(data);
-      }
-
-      if (isActive) {
-        setLoading(false);
-      }
-    };
-
-    loadStats();
-
-    return () => {
-      isActive = false;
-    };
-  }, [user, getUserStats]);
-
-  const totals = stats?.totals;
-  const totalEnergy = totals?.energy || 0;
-  const totalEarned = totals?.earned || 0;
-  const totalWatches = totals?.watches || 0;
-  const totalSessions = totals?.sessions || 0;
-  const todayWatches = totals?.today_watches || 0;
-  const dailyLimit = totals?.daily_limit || 200;
-  const avgPerAd = totalWatches > 0 ? totalEarned / totalWatches : 0;
-  const multiplier = stats?.boost.multiplier || 1;
-  const boostLevel = stats?.boost.level || 0;
-  const countryCode = stats?.country_code || 'ZZ';
+  const totalMined = stats?.total_earned || 0;
+  const totalWatches = stats?.total_watches || 0;
+  const totalSessions = stats?.total_sessions || 0;
+  const todayWatches = stats?.today_watches || 0;
+  const dailyLimit = stats?.daily_limit || 200;
+  const avgPerAd = totalWatches > 0 ? totalMined / totalWatches : 0;
 
   // Helper function to format time
   const formatTime = (dateString: string) => {
@@ -85,17 +72,11 @@ export function StatsScreen() {
 
       {/* Total Mined Card */}
       <GlassCard className="p-5 mb-5 text-center" glowEffect>
-        <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL ENERGY</p>
-        <p className="text-3xl sm:text-4xl text-[#FF0033]">{totalEnergy.toFixed(1)} 🆑</p>
-        <p className="text-white/40 text-[11px] uppercase tracking-wide mt-1">
-          Earned from ads: <span className="text-white">{totalEarned.toFixed(1)} 🆑</span>
+        <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL MINED</p>
+        <p className="text-3xl sm:text-4xl text-[#FF0033]">{totalMined.toFixed(1)} 🆑</p>
+        <p className="text-white/40 text-xs mt-2">
+          {todayWatches}/{dailyLimit} ads watched today
         </p>
-        <div className="flex items-center justify-center gap-3 text-white/40 text-xs mt-2">
-          <span>
-            {todayWatches}/{dailyLimit} ads watched today
-          </span>
-          <span className="uppercase tracking-widest text-white/30">{countryCode}</span>
-        </div>
       </GlassCard>
 
       {/* Metric Cards Grid */}
@@ -104,7 +85,7 @@ export function StatsScreen() {
           <Activity size={16} className="text-[#FF0033] mx-auto mb-2" />
           <p className="text-[10px] uppercase text-white/60 mb-1">SESSIONS</p>
           <p className="text-white text-lg">{totalSessions}</p>
-          <p className="text-white/40 text-[9px] mt-1">Total sessions</p>
+          <p className="text-white/40 text-[9px] mt-1">Total logins</p>
         </GlassCard>
         
         <GlassCard className="p-3 text-center">
@@ -124,8 +105,8 @@ export function StatsScreen() {
         <GlassCard className="p-3 text-center">
           <TrendingUp size={16} className="text-[#FF0033] mx-auto mb-2" />
           <p className="text-[10px] uppercase text-white/60 mb-1">MULTIPLIER</p>
-          <p className="text-white text-lg">x{multiplier}</p>
-          <p className="text-white/40 text-[9px] mt-1">Boost level {boostLevel}</p>
+          <p className="text-white text-lg">x{stats?.multiplier || 1}</p>
+          <p className="text-white/40 text-[9px] mt-1">Current boost</p>
         </GlassCard>
       </div>
 
@@ -144,11 +125,6 @@ export function StatsScreen() {
                   <div className="flex items-center gap-2">
                     <span className="text-[#FF0033]">+{session.reward} 🆑</span>
                     <span className="text-white/40 text-xs">{formatTime(session.created_at)}</span>
-                    {session.country_code && (
-                      <span className="text-white/30 text-[10px] uppercase tracking-widest">
-                        {session.country_code}
-                      </span>
-                    )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-white/60 text-xs">#{formatAdId(session.ad_id)}</p>

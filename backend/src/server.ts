@@ -1,33 +1,61 @@
-import 'dotenv/config';
+import cors from 'cors';
+import express from 'express';
+import type { ErrorRequestHandler } from 'express';
+import { ZodError } from 'zod';
 
-import http from 'node:http';
+import { getCorsAllowedOrigins, getHttpConfig, getNodeEnv } from './config';
+import { ensureDatabase } from './db';
+import apiRoutes from './routes';
 
-import { getHttpConfig } from './config';
-import { createApiMiddleware } from './routes';
+const app = express();
 
-const { port, host } = getHttpConfig();
+app.disable('x-powered-by');
+app.use(
+  cors({
+    origin: getCorsAllowedOrigins(),
+    credentials: true,
+  }),
+);
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: false }));
 
-const apiMiddleware = createApiMiddleware();
+app.use('/api', apiRoutes);
 
-const server = http.createServer((req, res) => {
-  apiMiddleware(req, res, () => {
-    res.statusCode = 404;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Not found' }));
-  });
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' });
 });
 
-server.listen(port, host, () => {
-  console.info(`[api] Server listening on http://${host}:${port}`);
-});
+const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  if (err instanceof ZodError) {
+    res.status(400).json({ error: err.errors.map((issue) => issue.message).join(', ') });
+    return;
+  }
 
-function handleShutdown(signal: string) {
-  console.info(`[api] Received ${signal}, closing server...`);
-  server.close(() => {
-    console.info('[api] Server closed');
-    process.exit(0);
+  const status = typeof err?.status === 'number' ? err.status : 500;
+  const message = err instanceof Error ? err.message : 'Unexpected server error';
+
+  if (status >= 500) {
+    console.error('[api] Unhandled error:', err);
+  }
+
+  res.status(status).json({ error: message });
+};
+
+app.use(errorHandler);
+
+async function start() {
+  await ensureDatabase();
+  const { host, port } = getHttpConfig();
+  app.listen(port, host, () => {
+    console.info(`[api] Server ready on http://${host}:${port} (${getNodeEnv()})`);
   });
 }
 
-process.on('SIGINT', handleShutdown);
-process.on('SIGTERM', handleShutdown);
+if (process.env.NODE_ENV !== 'test') {
+  start().catch((error) => {
+    console.error('[api] Failed to start server', error);
+    process.exit(1);
+  });
+}
+
+export default app;

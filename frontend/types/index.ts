@@ -7,7 +7,6 @@ export interface User {
   last_watch_at: string | null;
   boost_expires_at: string | null;
   created_at: string;
-  country_code?: string | null;
 }
 
 export interface Ad {
@@ -19,22 +18,12 @@ export interface Ad {
 }
 
 export interface WatchLog {
-  id: string;
   user_id: string;
   ad_id: string;
   reward: number;
   base_reward: number;
   multiplier: number;
   created_at: string;
-  country_code: string | null;
-}
-
-export interface SessionLog {
-  id: string;
-  user_id: string;
-  country_code: string | null;
-  created_at: string;
-  last_activity_at: string;
 }
 
 export interface Order {
@@ -42,38 +31,10 @@ export interface Order {
   user_id: string;
   boost_level: number;
   ton_amount: number;
-  status: 'pending' | 'pending_verification' | 'awaiting_webhook' | 'paid' | 'failed';
+  status: 'pending' | 'paid' | 'failed';
   payload: string;
   tx_hash: string | null;
-  tx_lt?: string | null;
-  merchant_wallet: string;
-  paid_at: string | null;
   created_at: string;
-}
-
-export interface PaymentStatusResponse {
-  order_id: string;
-  status: Order['status'];
-  paid_at: string | null;
-  tx_hash: string | null;
-  tx_lt: string | null;
-  verification_attempts: number;
-  verification_error: string | null;
-  last_payment_check: string | null;
-  last_event?: {
-    id: number;
-    status: string;
-    received_at: string;
-    wallet: string;
-    amount: number;
-  };
-}
-
-export interface RetryPaymentResponse {
-  success: boolean;
-  status: Order['status'];
-  verification_attempts: number;
-  last_payment_check: string | null;
 }
 
 export interface ApiResponse<T> {
@@ -106,27 +67,17 @@ export interface OrderCreateResponse {
   duration_days: number;
 }
 
-export interface UserStatsTotals {
-  energy: number;
-  watches: number;
-  earned: number;
-  sessions: number;
+export interface UserStatsResponse {
+  total_energy: number;
+  total_watches: number;
+  total_earned: number;
+  total_sessions: number;
   today_watches: number;
   daily_limit: number;
-}
-
-export interface UserStatsBoost {
-  level: number;
+  boost_level: number;
   multiplier: number;
-  expires_at: string | null;
-}
-
-export interface UserStatsResponse {
-  totals: UserStatsTotals;
-  boost: UserStatsBoost;
-  country_code: string | null;
+  boost_expires_at: string | null;
   watch_history: WatchLog[];
-  session_history: SessionLog[];
 }
 
 // Partner Rewards Types

@@ -9,25 +9,35 @@ import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
-import { useTonConnect } from '../hooks/useTonConnect';
 import { boostMultiplier } from '@shared/config/economy';
 import { getRandomAd, type AdCreative } from '@shared/config/ads';
-import { TonConnectButton } from './TonConnectButton';
+
+interface AdResponse {
+  id: string;
+  url: string;
+  reward: number;
+  type: string;
+}
+
+interface AdCompleteResponse {
+  success: boolean;
+  reward: number;
+  new_balance: number;
+  multiplier: number;
+  daily_watches_remaining: number;
+}
 
 export function MiningScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
-  const { completeAdWatch: completeAdRpc } = useApi();
-  const { wallet, status } = useTonConnect();
-  const isConnected = Boolean(wallet && status === 'ready');
-
+  const { makeRequest } = useApi();
+  
   const [isMining, setIsMining] = useState(false);
   const [miningProgress, setMiningProgress] = useState(0);
+  const [currentAd, setCurrentAd] = useState<AdResponse | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [currentAdCreative, setCurrentAdCreative] = useState<AdCreative | null>(null);
-
-  const isMiningDisabled = !isConnected || isMining || cooldownRemaining > 0;
 
   // Cooldown timer
   useEffect(() => {
@@ -40,17 +50,10 @@ export function MiningScreen() {
   }, [cooldownRemaining]);
 
   const handleStartMining = async () => {
-    if (isMining || cooldownRemaining > 0) return;
-
-    if (!isConnected) {
-      toast.error('Connect your TON wallet to start mining.');
-      return;
-    }
-
-    if (!user) return;
-
+    if (isMining || !user || cooldownRemaining > 0) return;
+    
     // Get a random ad creative
-    const adCreative = getRandomAd(userData?.country_code);
+    const adCreative = getRandomAd();
     setCurrentAdCreative(adCreative);
     
     // Open ad modal
@@ -79,13 +82,19 @@ export function MiningScreen() {
   const completeAdWatch = async (adId: string) => {
     if (!user) return;
 
-    const result = await completeAdRpc({
-      userId: user.id,
-      adId,
-    });
+    const result = await makeRequest<AdCompleteResponse>(
+      '/ads/complete',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ad_id: adId }),
+      },
+      user.accessToken,
+      user.id
+    );
 
     setIsMining(false);
     setMiningProgress(0);
+    setCurrentAd(null);
 
     if (result) {
       const multiplierText = result.multiplier > 1 ? ` (x${result.multiplier})` : '';
@@ -140,16 +149,6 @@ export function MiningScreen() {
         )}
       </div>
 
-      {/* Wallet connect prompt */}
-      {!isConnected && (
-        <GlassCard className="w-full mb-6 p-4 border border-[#0098EA]/30 bg-[#0098EA]/10">
-          <p className="text-[#0098EA] text-xs uppercase tracking-wider text-center mb-3">
-            Connect your TON wallet to unlock mining rewards
-          </p>
-          <TonConnectButton />
-        </GlassCard>
-      )}
-
       {/* Boost Info */}
       {userData && userData.boost_level > 0 && (
         <BoostInfo
@@ -163,10 +162,10 @@ export function MiningScreen() {
       <div className="relative mb-6 flex-shrink-0">
         <motion.button
           onClick={handleStartMining}
-          disabled={isMiningDisabled}
+          disabled={isMining || cooldownRemaining > 0}
           className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-full bg-gradient-to-br from-[#FF0033]/20 to-[#FF0033]/5 border-2 border-[#FF0033] flex items-center justify-center disabled:opacity-50 touch-manipulation"
-          whileHover={{ scale: isMiningDisabled ? 1 : 1.05 }}
-          whileTap={{ scale: isMiningDisabled ? 1 : 0.95 }}
+          whileHover={{ scale: isMining || cooldownRemaining > 0 ? 1 : 1.05 }}
+          whileTap={{ scale: isMining || cooldownRemaining > 0 ? 1 : 0.95 }}
           animate={
             isMining
               ? {
@@ -187,14 +186,7 @@ export function MiningScreen() {
           }}
         >
           <div className="text-center px-4">
-            {!isConnected ? (
-              <>
-                <p className="text-[#FF0033] uppercase tracking-widest mb-2">
-                  CONNECT WALLET
-                </p>
-                <p className="text-white/60 text-xs uppercase">TO START MINING</p>
-              </>
-            ) : cooldownRemaining > 0 ? (
+            {cooldownRemaining > 0 ? (
               <>
                 <p className="text-[#FF0033]/60 uppercase tracking-widest mb-2">
                   COOLDOWN
