@@ -4,6 +4,7 @@ import { customAlphabet } from 'nanoid';
 import type { PoolClient, QueryResultRow } from 'pg';
 
 import { adCreatives } from '@shared/config/ads';
+import type { AdCreative } from '@shared/config/ads';
 import {
   BOOSTS,
   DAILY_VIEW_LIMIT,
@@ -11,7 +12,9 @@ import {
   ENERGY_PER_AD,
   boostMultiplier,
 } from '@shared/config/economy';
+import type { Boost } from '@shared/config/economy';
 import { getActivePartners, getPartnerById } from '@shared/config/partners';
+import type { PartnerReward } from '@shared/config/partners';
 
 import { getMerchantWalletAddress } from '../config';
 import { query, withConnection, withTransaction, type SqlExecutor } from '../db';
@@ -123,7 +126,7 @@ function differenceInSeconds(later: Date, earlier: Date): number {
 }
 
 function findBoost(level: number) {
-  return BOOSTS.find((item) => item.level === level) ?? BOOSTS[0];
+  return BOOSTS.find((item: Boost) => item.level === level) ?? BOOSTS[0];
 }
 
 async function fetchUser(executor: SqlExecutor, userId: string, options?: { forUpdate?: boolean }) {
@@ -197,7 +200,7 @@ function resetDailyCountersIfNeeded(user: UserEntity, now: Date): UserEntity {
 }
 
 function ensureAdExists(adId: string): string | null {
-  const match = adCreatives.find((ad) => ad.id === adId);
+  const match = adCreatives.find((ad: AdCreative) => ad.id === adId);
   return match?.type ?? null;
 }
 
@@ -540,7 +543,9 @@ export async function getRewardStatus(userId: string) {
     [userId],
   );
   const claimed = result.rows.map((row) => row.partner_id);
-  const available = getActivePartners().filter((partner) => !claimed.includes(partner.id)).length;
+  const available = getActivePartners().filter(
+    (partner: PartnerReward) => !claimed.includes(partner.id),
+  ).length;
 
   return {
     claimed_partners: claimed,

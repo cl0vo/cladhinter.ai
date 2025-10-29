@@ -15,7 +15,12 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-export async function createAnonymousSession(): Promise<{ userId: string; accessToken: string }> {
+export interface AnonymousSession {
+  userId: string;
+  accessToken: string;
+}
+
+export async function createAnonymousSession(): Promise<AnonymousSession> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const userId = generateUserId();
     const accessToken = randomBytes(TOKEN_BYTES).toString('hex');

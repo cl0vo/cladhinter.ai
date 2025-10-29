@@ -1,9 +1,9 @@
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
 
-import { getTonWebhookSecret } from '../config';
-import { createAnonymousSession, verifyAccessToken } from './services/authService';
+import { getTonWebhookSecret } from './config';
+import { createAnonymousSession, verifyAccessToken, type AnonymousSession } from './services/authService';
 import {
   claimReward,
   completeAdWatch,
@@ -20,11 +20,11 @@ type AuthenticatedRequest = Request & { userId: string; accessToken: string };
 
 const router = Router();
 
-function asyncHandler<T extends AuthenticatedRequest>(
-  handler: (req: T, res: Response, next: NextFunction) => Promise<void>,
-) {
-  return (req: T, res: Response, next: NextFunction) => {
-    handler(req, res, next).catch(next);
+function asyncHandler(
+  handler: (req: AuthenticatedRequest, res: Response, next: NextFunction) => Promise<void>,
+): RequestHandler {
+  return (req, res, next) => {
+    handler(req as AuthenticatedRequest, res, next).catch(next);
   };
 }
 
@@ -32,12 +32,13 @@ router.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-router.post('/auth/anonymous', (_req, res, next) => {
-  createAnonymousSession()
-    .then((session) => {
-      res.status(201).json(session);
-    })
-    .catch(next);
+router.post('/auth/anonymous', async (_req, res, next) => {
+  try {
+    const session: AnonymousSession = await createAnonymousSession();
+    res.status(201).json(session);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post('/payments/ton/webhook', (req, res, next) => {
@@ -80,8 +81,8 @@ router.post('/payments/ton/webhook', (req, res, next) => {
   })().catch(next);
 });
 
-router.use((req: AuthenticatedRequest, res, next) => {
-  (async () => {
+router.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
     const userId = req.header('x-user-id')?.trim() ?? '';
     const authHeader = req.header('authorization')?.trim() ?? '';
 
@@ -99,10 +100,14 @@ router.use((req: AuthenticatedRequest, res, next) => {
       return;
     }
 
-    req.userId = userId;
-    req.accessToken = token;
+    const authRequest = req as AuthenticatedRequest;
+    authRequest.userId = userId;
+    authRequest.accessToken = token;
+
     next();
-  })().catch(next);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post(
