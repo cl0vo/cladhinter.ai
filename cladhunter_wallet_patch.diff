@@ -1,0 +1,159 @@
+*** Begin Patch
+*** Update File: backend/src/db.ts
+@@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
+-     CREATE TABLE IF NOT EXISTS users (
++     CREATE TABLE IF NOT EXISTS users (
+@@
+-       last_session_at TIMESTAMPTZ
+-     );
++       last_session_at TIMESTAMPTZ,
++       wallet_address TEXT UNIQUE
++     );
+@@
+     ALTER TABLE users
+@@
+-      ADD COLUMN IF NOT EXISTS last_session_at TIMESTAMPTZ;
++      ADD COLUMN IF NOT EXISTS last_session_at TIMESTAMPTZ,
++      ADD COLUMN IF NOT EXISTS wallet_address TEXT UNIQUE;
+*** End Patch
+*** Begin Patch
+*** Update File: backend/src/services/userService.ts
+@@
+ export async function claimReward({
+@@
+ export async function claimReward({
+@@
+ }
++
++/**
++ * Set or update the connected TON wallet address for a user.
++ * This persists the wallet address on the user record and updates the
++ * modification timestamp. If the wallet address is empty an error will be thrown.
++ */
++export async function setUserWallet({
++  userId,
++  walletAddress,
++}: {
++  userId: string;
++  walletAddress: string;
++}): Promise<{ success: boolean; wallet_address: string }> {
++  if (!walletAddress || !walletAddress.trim()) {
++    throw new Error('Missing wallet address');
++  }
++
++  return withTransaction(async (client) => {
++    const trimmed = walletAddress.trim();
++    await client.query(
++      `UPDATE users
++         SET wallet_address = $2,
++             updated_at = NOW()
++       WHERE id = $1`,
++      [userId, trimmed],
++    );
++    return {
++      success: true,
++      wallet_address: trimmed,
++    };
++  });
++}
+*** End Patch
+*** Begin Patch
+*** Update File: backend/src/routes.ts
+@@
+ import {
+   claimReward,
+   completeAdWatch,
+   confirmOrder,
+   createOrder,
+   getRewardStatus,
+   getUserBalance,
+   getUserStats,
+   initUser,
+   registerTonWebhookPayment,
++  setUserWallet,
+ } from './services/userService';
+@@
+ router.post(
+   '/user/init',
+@@
+   }),
+ );
++
++// Persist the connected TON wallet address on the user record.
++router.post(
++  '/user/wallet',
++  asyncHandler(async (req: AuthenticatedRequest, res) => {
++    const schema = z.object({
++      wallet_address: z.string().min(1),
++    });
++    const { wallet_address } = schema.parse(req.body ?? {});
++    await setUserWallet({
++      userId: req.userId,
++      walletAddress: wallet_address,
++    });
++    res.json({ success: true });
++  }),
++);
+*** End Patch
+*** Begin Patch
+*** Update File: frontend/components/WalletScreen.tsx
+@@
+-import { useState } from 'react';
++import { useState, useEffect } from 'react';
+@@
+-import { useTonConnect } from '../hooks/useTonConnect';
++import { useTonConnect } from '../hooks/useTonConnect';
+@@
+ export function WalletScreen() {
+   const { user } = useAuth();
+   const { userData, refreshBalance } = useUserData();
+   const { makeRequest } = useApi();
+-  const { sendTransaction, isConnected } = useTonConnect();
++  const { sendTransaction, isConnected, wallet } = useTonConnect();
+@@
+   const [isSendingTx, setIsSendingTx] = useState(false);
+@@
+   const balance = userData?.energy || 0;
+@@
+   const handleBuyBoost = async (boostLevel: number) => {
+@@
+   };
++
++  // When the wallet connects, persist the wallet address on the server so that
++  // the CL balance is tied to the wallet. This runs whenever the wallet or
++  // connection state changes.
++  useEffect(() => {
++    if (user && isConnected && wallet && wallet.address) {
++      (async () => {
++        try {
++          await makeRequest(
++            '/user/wallet',
++            {
++              method: 'POST',
++              body: JSON.stringify({ wallet_address: wallet.address }),
++            },
++            user.accessToken,
++            user.id,
++          );
++        } catch (error) {
++          console.error('Failed to register wallet', error);
++        }
++      })();
++    }
++  }, [user, isConnected, wallet]);
+*** End Patch
+*** Begin Patch
+*** Update File: README.md
+@@ ## Highlights
+ - **TON-powered boosts** – premium multipliers are purchased with TON; payments are validated through Tonapi or webhook callbacks.
+ - **Partner campaigns** – flexible reward system for Telegram / X / YouTube communities.
++- **Wallet-linked balance** – CL energy rewards are tied to the user’s connected TON wallet, ensuring consistent balances across sessions.
+@@ ## API Surface
+ | Method | Endpoint                      | Description                                  |
+ |--------|--------------------------------|----------------------------------------------|
+@@
+ | POST   | `/api/orders/create`           | Create TON boost order                       |
+ | POST   | `/api/orders/:id/confirm`      | Manual confirmation + Tonapi verification    |
++| POST   | `/api/user/wallet`             | Persist the connected TON wallet address     |
+ | POST   | `/api/payments/ton/webhook`    | Render-facing TON webhook (requires secret)  |
+*** End Patch
