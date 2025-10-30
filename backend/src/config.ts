@@ -7,6 +7,12 @@ const DEFAULT_MERCHANT_WALLET =
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX = 120;
 const DEFAULT_TON_API_BASE_URL = 'https://tonapi.io';
+const DEFAULT_TON_PROOF_TTL_SECONDS = 15 * 60;
+const DEFAULT_TON_PROOF_ALLOWED_DOMAINS = [
+  'localhost:5173',
+  '127.0.0.1:5173',
+  'cladhunter-ai-frontend.vercel.app',
+];
 
 function parseInteger(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -74,4 +80,27 @@ export function getTonWebhookSecret(): string | null {
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = parseInteger(value, fallback);
   return parsed > 0 ? parsed : fallback;
+}
+
+function parseStringList(raw: string | undefined, fallback: string[]): string[] {
+  if (!raw) {
+    return fallback;
+  }
+  const items = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : fallback;
+}
+
+export function getTonProofConfig(): { allowedDomains: string[]; maxAgeSeconds: number } {
+  const allowedDomains = parseStringList(
+    process.env.TON_PROOF_ALLOWED_DOMAINS,
+    DEFAULT_TON_PROOF_ALLOWED_DOMAINS,
+  );
+  const maxAgeSeconds = parsePositiveInteger(
+    process.env.TON_PROOF_TTL_SECONDS,
+    DEFAULT_TON_PROOF_TTL_SECONDS,
+  );
+  return { allowedDomains, maxAgeSeconds };
 }

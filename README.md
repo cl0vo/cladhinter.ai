@@ -6,12 +6,11 @@
 
 ## Highlights
 
-- **Mining by watching ads** â€“ configurable creatives (video/image) reward users with in-game energy.
-- **TON-powered boosts** â€“ premium multipliers are purchased with TON; payments are validated through Tonapi or webhook callbacks.
-- **Partner campaigns** â€“ flexible reward system for Telegram / X / YouTube communities.
-- **Anonymous sessions** â€“ backend issues tokens, rate limit protects all API routes.
-- **Shared configs** â€“ ads / boosts / partners live in `shared/` and are reused on both layers.
-
+- **Mining by watching ads** – configurable creatives (video/image) reward users with in-game energy.
+- **TON-powered boosts** – premium multipliers are purchased with TON; payments are validated through Tonapi or webhook callbacks.
+- **Partner campaigns** – flexible reward system for Telegram / X / YouTube communities.
+- **Wallet-bound sessions** – TonConnect proof links CL balances to a verified TON wallet.
+- **Shared configs** – ads / boosts / partners live in `shared/` and are reused on both layers.
 ---
 
 ## Tech Stack
@@ -49,12 +48,13 @@ Legacy Supabase/Deno logic has been removed.
 
 ## Authentication Flow
 
-1. Frontend calls `POST /api/auth/anonymous` to receive `{ userId, accessToken }`.
-2. Each subsequent request must send:
+1. Frontend requests a challenge via `GET /api/auth/ton-connect/challenge` and feeds the payload into TonConnect `tonProof`.
+2. The connected wallet signs the payload and returns `ton_proof` together with its address, public key and `walletStateInit`.
+3. Frontend sends the proof to `POST /api/auth/ton-connect`; the backend verifies the signature, checks the allowed domain, derives the wallet address from `state_init`, and issues `{ userId, accessToken, walletAddress }`.
+4. Each subsequent request must send:
    - `Authorization: Bearer <accessToken>`
    - `X-User-ID: <userId>`
-3. Tokens are hashed in `user_tokens` and refreshed on every API hit.
-4. `useAuth()` hook bootstraps and persists the session on the client.
+5. Sessions are stored per wallet address; `useAuth()` refreshes the proof when the wallet reconnects.
 
 ---
 
@@ -62,7 +62,8 @@ Legacy Supabase/Deno logic has been removed.
 
 | Method | Endpoint                      | Description                                  |
 |--------|--------------------------------|----------------------------------------------|
-| POST   | `/api/auth/anonymous`          | Issue anonymous session token                |
+| GET    | `/api/auth/ton-connect/challenge` | Generate TonProof payload challenge        |
+| POST   | `/api/auth/ton-connect`        | Verify TonProof and issue wallet session     |
 | GET    | `/api/health`                  | Service health probe                         |
 | POST   | `/api/user/init`               | Initialise user session & counters           |
 | GET    | `/api/user/balance`            | Energy, boost level, multiplier              |
@@ -112,6 +113,8 @@ When `VITE_BACKEND_URL` is omitted the client auto-targets `http://localhost:400
 | `TON_API_BASE_URL` | `https://tonapi.io` | Tonapi host |
 | `TON_API_KEY` | *(optional)* | Tonapi bearer token (recommended) |
 | `TON_WEBHOOK_SECRET` | *(optional)* | Shared secret expected by webhook |
+| `TON_PROOF_ALLOWED_DOMAINS` | `localhost:5173,cladhunter-ai-frontend.vercel.app` | Domains accepted inside TonProof payload |
+| `TON_PROOF_TTL_SECONDS` | `900` | Max age for TonProof timestamp |
 | `VITE_BACKEND_URL` *(frontend)* | *(optional)* | Static API base during build/runtime |
 
 Use the templates in `backend/.env.example` and `frontend/.env.example`.
@@ -130,7 +133,7 @@ Use the templates in `backend/.env.example` and `frontend/.env.example`.
    - Build: `npm run build:frontend` (defaults to repo `vercel.json`)
    - Output: `frontend/dist` (auto-detected via `frontend/vercel.json`)
    - Env: `VITE_BACKEND_URL=https://<render-service>.onrender.com`
-4. Smoke test after deploy: `/api/health`, `/api/auth/anonymous`, mining flow, reward claim, TON webhook.
+4. Smoke test after deploy: `/api/health`, `/api/auth/ton-connect`, mining flow, reward claim, TON webhook.
 
 Detailed walkthrough â†’ [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
@@ -195,3 +198,10 @@ Ready for deployment following the steps above. Ping the team before starting a 
    ORDER BY created_at DESC;
    ```
    No rows indicate the claim path did not persist; inspect API logs for `reward already claimed` or transaction failures.
+
+
+
+
+
+
+

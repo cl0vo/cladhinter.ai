@@ -15,44 +15,67 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-export interface AnonymousSession {
+export interface WalletSession {
   userId: string;
   accessToken: string;
+  walletAddress: string;
 }
 
-export async function createAnonymousSession(): Promise<AnonymousSession> {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const userId = generateUserId();
+export async function createWalletSession(walletAddress: string): Promise<WalletSession> {
+  const normalized = walletAddress;
+
+  const { userId, accessToken } = await withTransaction(async (client) => {
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM users WHERE wallet_address = $1`,
+      [normalized],
+    );
+    let userId = existing.rows[0]?.id ?? null;
+    if (!userId) {
+      userId = generateUserId();
+      try {
+        await client.query(
+          `INSERT INTO users (id, wallet_address, created_at, updated_at)
+           VALUES ($1, $2, NOW(), NOW())`,
+          [userId, normalized],
+        );
+      } catch (error) {
+        const isUniqueViolation =
+          typeof error === 'object' &&
+          error !== null &&
+          'code' in error &&
+          (error as { code?: string }).code === '23505';
+        if (!isUniqueViolation) {
+          throw error;
+        }
+
+        const retry = await client.query<{ id: string }>(
+          `SELECT id FROM users WHERE wallet_address = $1`,
+          [normalized],
+        );
+        userId = retry.rows[0]?.id ?? userId;
+      }
+    } else {
+      await client.query(
+        `UPDATE users
+           SET updated_at = NOW()
+         WHERE id = $1`,
+        [userId],
+      );
+    }
+
     const accessToken = randomBytes(TOKEN_BYTES).toString('hex');
     const tokenHash = hashToken(accessToken);
 
-    try {
-      await withTransaction(async (client) => {
-        await client.query(
-          `INSERT INTO users (id, created_at, updated_at)
-           VALUES ($1, NOW(), NOW())
-           ON CONFLICT (id) DO NOTHING`,
-          [userId],
-        );
+    await client.query(
+      `INSERT INTO user_tokens (token_hash, user_id, created_at, last_used_at)
+       VALUES ($1, $2, NOW(), NOW())`,
+      [tokenHash, userId],
+    );
 
-        await client.query(
-          `INSERT INTO user_tokens (token_hash, user_id, created_at, last_used_at)
-           VALUES ($1, $2, NOW(), NOW())`,
-          [tokenHash, userId],
-        );
-      });
+    return { userId, accessToken };
+  });
 
-      return { userId, accessToken };
-    } catch (error) {
-      const isUniqueViolation = typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23505';
-      if (!isUniqueViolation) {
-        throw error;
-      }
-      // retry with a fresh id/token
-    }
-  }
-
-  throw new Error('Failed to create anonymous session');
+  return { userId, accessToken, walletAddress: normalized };
 }
 
 export async function verifyAccessToken(userId: string, accessToken: string): Promise<boolean> {

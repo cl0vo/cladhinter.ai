@@ -8,12 +8,15 @@
     "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json"
   },
   "dependencies": {
+    "@ton/crypto": "^3.3.0",
+    "@ton/ton": "^16.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.3.1",
     "nanoid": "^5.0.7",
     "pg": "^8.16.3",
+    "tweetnacl": "^1.0.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {

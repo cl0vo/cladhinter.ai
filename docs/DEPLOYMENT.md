@@ -29,6 +29,8 @@ Environment variables required by the backend:
 | `TON_API_BASE_URL` | `https://tonapi.io` | TON explorer base URL |
 | `TON_API_KEY` | `tonapi_...` | Bearer token for Tonapi (recommended) |
 | `TON_WEBHOOK_SECRET` | `super-secret` | Shared secret for webhook endpoint |
+| `TON_PROOF_ALLOWED_DOMAINS` | `localhost:5173,cladhunter-ai-frontend.vercel.app` | Domains accepted inside TonProof payload |
+| `TON_PROOF_TTL_SECONDS` | `900` | Max age for TonProof timestamp |
 
 > Keep a copy of the connection string handy; you will paste it into Render.
 
@@ -44,7 +46,7 @@ Environment variables required by the backend:
 6. (Optional) Configure auto-deploy and a free tier cron job if you want to keep the instance warm.
 
 Render will expose a URL like `https://cladhunter-api.onrender.com`. Keep that value for the frontend.
-The client obtains anonymous sessions via `POST /api/auth/anonymous`; every subsequent request must include the issued `Authorization` bearer token and `X-User-ID` header.
+The client now authenticates wallets via TonConnect: request a challenge from `GET /api/auth/ton-connect/challenge`, send the wallet proof to `POST /api/auth/ton-connect`, then attach `Authorization` and `X-User-ID` headers to every subsequent call.
 
 ---
 
@@ -60,6 +62,8 @@ The client obtains anonymous sessions via `POST /api/auth/anonymous`; every subs
 | `VITE_BACKEND_URL` | `https://cladhunter-api.onrender.com` | The Render service URL (no trailing slash) |
 
 5. Redeploy. Vercel will inject the `VITE_BACKEND_URL` into the build so that the client talks to the Render API.
+
+TonConnect proof is requested automatically on the frontend: the app fetches `/api/auth/ton-connect/challenge`, sets it as the connect request parameter, and sends the resulting proof back to `/api/auth/ton-connect`.
 
 > Note: The build currently emits a single ~750 kB JS chunk. Vercel logs a warning about the size, but no action is required unless you want to introduce manual chunking or dynamic imports.
 

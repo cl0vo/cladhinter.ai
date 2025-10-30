@@ -32,6 +32,7 @@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
       energy DOUBLE PRECISION NOT NULL DEFAULT 0,
       boost_level INTEGER NOT NULL DEFAULT 0,
       boost_expires_at TIMESTAMPTZ,
+      wallet_address TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_watch_at TIMESTAMPTZ,
@@ -142,6 +143,17 @@ async function runSchemaMigrations(executor: SqlExecutor): Promise<void> {
   `);
   await executor.query(
     `CREATE INDEX IF NOT EXISTS user_tokens_user_idx ON user_tokens (user_id);`,
+  );
+
+  await executor.query(
+    `ALTER TABLE users
+       ADD COLUMN IF NOT EXISTS wallet_address TEXT;`,
+  );
+
+  await executor.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS users_wallet_address_idx
+       ON users (wallet_address)
+       WHERE wallet_address IS NOT NULL;`,
   );
 }
 

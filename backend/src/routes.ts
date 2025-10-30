@@ -2,8 +2,8 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
 
-import { getTonWebhookSecret } from './config';
-import { createAnonymousSession, verifyAccessToken, type AnonymousSession } from './services/authService';
+import { getTonProofConfig, getTonWebhookSecret } from './config';
+import { createWalletSession, verifyAccessToken, type WalletSession } from './services/authService';
 import {
   claimReward,
   completeAdWatch,
@@ -15,6 +15,7 @@ import {
   initUser,
   registerTonWebhookPayment,
 } from './services/userService';
+import { generateTonProofPayload, verifyTonProof } from './services/tonProofService';
 
 type AuthenticatedRequest = Request & { userId: string; accessToken: string };
 
@@ -32,10 +33,60 @@ router.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-router.post('/auth/anonymous', async (_req, res, next) => {
+router.post('/auth/ton-connect', async (req, res, next) => {
   try {
-    const session: AnonymousSession = await createAnonymousSession();
+    const proofSchema = z.object({
+      timestamp: z.number().int(),
+      domain: z.object({
+        value: z.string().min(1),
+        lengthBytes: z.number().int().nonnegative(),
+      }),
+      signature: z.string().min(1),
+      payload: z.string().min(1),
+      state_init: z.string().optional(),
+    });
+
+    const schema = z.object({
+      address: z.string().min(1),
+      network: z.union([z.string(), z.number()]),
+      public_key: z.string().regex(/^[0-9a-fA-F]{64}$/),
+      state_init: z.string().optional(),
+      proof: proofSchema,
+    });
+
+    const parsed = schema.parse(req.body ?? {});
+    const { allowedDomains, maxAgeSeconds } = getTonProofConfig();
+
+    const verification = await verifyTonProof(
+      {
+        address: parsed.address,
+        network: parsed.network,
+        publicKey: parsed.public_key,
+        stateInit: parsed.state_init,
+        proof: parsed.proof,
+      },
+      {
+        allowedDomains,
+        maxAgeSeconds,
+      },
+    );
+
+    if (!verification.ok || !verification.walletAddress) {
+      res.status(401).json({ error: 'Invalid ton-proof payload' });
+      return;
+    }
+
+    const session: WalletSession = await createWalletSession(verification.walletAddress);
     res.status(201).json(session);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/auth/ton-connect/challenge', async (_req, res, next) => {
+  try {
+    const payload = await generateTonProofPayload();
+    res.json({ payload });
   } catch (error) {
     next(error);
   }
