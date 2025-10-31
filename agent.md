@@ -43,7 +43,18 @@ Legacy Supabase or Deno code has been removed. Do not reintroduce it.
 
 ---
 
-## 3. Local Development
+## 3. Build & Run Modes
+
+### Production (Vercel)
+
+Ship builds against the Vercel-hosted frontend. Before running `npm run build:frontend`, set `VITE_BACKEND_URL` to the live Render API so the bundle points at the public backend (for example `https://cladhunter-api.onrender.com`). Deploy `frontend/dist` to Vercel—traffic hits `https://cladhunter.vercel.app` or your custom domain.
+
+```bash
+npm install
+VITE_BACKEND_URL=https://cladhunter-api.onrender.com npm run build:frontend
+```
+
+### Local debugging
 
 ```bash
 npm install                                # install workspace dependencies
@@ -54,7 +65,7 @@ npm run dev:backend                        # Express API on http://localhost:400
 npm run dev:frontend                       # Vite dev server on http://localhost:5173
 ```
 
-If `VITE_BACKEND_URL` is missing the client defaults to `http://localhost:4000/api`.
+Local debugging may omit `VITE_BACKEND_URL`, in which case the client falls back to `http://localhost:4000/api`. Production builds must always provide the Render URL.
 
 To run both services together use two terminals or a process manager (for example `npm run dev --workspaces` once scripts exist).
 

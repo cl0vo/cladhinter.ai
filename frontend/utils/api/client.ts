@@ -1,5 +1,6 @@
 const runtimeBackendUrl = import.meta.env.VITE_BACKEND_URL?.trim();
 const fallbackBackendUrl = import.meta.env.VITE_BACKEND_FALLBACK?.trim();
+const DEFAULT_PROD_BACKEND = 'https://cladhunter-api.onrender.com';
 
 function deriveBackendFromLocation(): string | null {
   if (typeof window === 'undefined') {
@@ -37,10 +38,16 @@ function resolveApiBase(): string {
   const candidate =
     runtimeBackendUrl ||
     fallbackBackendUrl ||
-    deriveBackendFromLocation();
+    deriveBackendFromLocation() ||
+    DEFAULT_PROD_BACKEND;
 
-  if (!candidate) {
-    return '/api';
+  if (candidate === DEFAULT_PROD_BACKEND && typeof window !== 'undefined') {
+    // Emit a single warning in the browser to highlight missing deployment config.
+    console.warn(
+      '[api] Falling back to the default Render backend at',
+      DEFAULT_PROD_BACKEND,
+      '- set VITE_BACKEND_URL during build to target a different API.',
+    );
   }
 
   return normalizeBase(candidate);

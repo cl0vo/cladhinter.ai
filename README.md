@@ -67,7 +67,18 @@ Response contracts are shared with the frontend under `frontend/types/`.
 
 ---
 
-## Local Development
+## Build & Run Modes
+
+### Production (Vercel)
+
+The shipped bundle is built for the public Vercel deployment. Before running `npm run build:frontend`, export `VITE_BACKEND_URL` so the client calls the live Render API (for example `https://cladhunter-api.onrender.com`). Deploy `frontend/dist` to Vercel; the app is served from `https://cladhunter.vercel.app` or your configured custom domain.
+
+```bash
+npm install
+VITE_BACKEND_URL=https://cladhunter-api.onrender.com npm run build:frontend
+```
+
+### Local debugging
 
 > Requires Node.js 18+ and access to a PostgreSQL instance (Neon recommended).
 
@@ -80,7 +91,7 @@ npm run dev:backend                        # start Express API on http://localho
 npm run dev:frontend                       # start Vite dev server on http://localhost:5173
 ```
 
-The client defaults to `http://localhost:4000/api` when `VITE_BACKEND_URL` is not set.
+When debugging locally you may omit `VITE_BACKEND_URL` and the client falls back to `http://localhost:4000/api`. Production builds must set `VITE_BACKEND_URL` to the Render URL.
 
 ---
 

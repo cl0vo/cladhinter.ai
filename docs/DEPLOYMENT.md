@@ -3,7 +3,6 @@
 Cladhunter runs as a small monorepo: Vite frontend, Express backend, shared TypeScript configs, and a Neon PostgreSQL database. This guide covers the minimum configuration needed to launch the stack.
 
 ---
-пуш
 ## 1. Prepare the Database (Neon)
 
 1. Create a Neon project and database.
@@ -37,7 +36,7 @@ Keep the connection string handy for Render configuration.
 5. Add the environment variables listed above.
 6. Set health check path to `/api/health`.
 
-Render will expose a URL such as `https://cladhunter-api.onrender.com`. This value is used by the frontend.
+Render will expose a URL such as `https://cladhunter-api.onrender.com`. Set this as `VITE_BACKEND_URL` when building for Vercel so the public frontend can reach the API.
 
 Sessions are wallet-bound. The frontend retrieves a TonConnect challenge (`GET /api/auth/ton-connect/challenge`), exchanges the signed proof via `POST /api/auth/ton-connect`, and reuses the returned `{ userId, accessToken, walletAddress }`. Boost purchases create orders, send TON with the encoded comment payload, and settle once TonAPI confirms the transaction (via webhook or a manual `/api/orders/:id/confirm` with the transaction hash).
 
@@ -54,11 +53,11 @@ Sessions are wallet-bound. The frontend retrieves a TonConnect challenge (`GET /
 |----------|-------|
 | `VITE_BACKEND_URL` | `https://cladhunter-api.onrender.com` |
 
-Re-deploy. Vercel injects `VITE_BACKEND_URL` into the build so the client can reach the Render API. During local development override this value in `frontend/.env`.
+Redeploy. Vercel injects `VITE_BACKEND_URL` into the static build so the client targets the Render API while running on the public Vercel domain (for example `https://cladhunter.vercel.app`). Only override this value in `frontend/.env` when you are debugging locally.
 
 ---
 
-## 4. Local Development Checklist
+## 4. Local Debugging Checklist (optional)
 
 ```bash
 # install dependencies
@@ -73,7 +72,7 @@ cp frontend/.env.example frontend/.env
 npm run dev:frontend
 ```
 
-The backend listens on `http://localhost:4000`; the frontend defaults to calling `http://localhost:4000/api` unless you override `VITE_BACKEND_URL`.
+The backend listens on `http://localhost:4000`; the frontend defaults to calling `http://localhost:4000/api` only for this debug mode. Production builds must supply the Render URL via `VITE_BACKEND_URL`.
 
 ---
 
