@@ -233,17 +233,18 @@ export function WalletScreen() {
         <p className="text-white/60 text-xs uppercase tracking-wider mb-3">REFERRALS</p>
         <GlassCard className="p-4">
           <p className="text-white/80 mb-2">
-            INVITE FRIENDS - EARN 10%
+            REFERRAL REWARDS COMING SOON
           </p>
           <p className="text-white/50 text-xs mb-3">
-            (CAP 50 CL/MONTH PER FRIEND)
+            We are finalizing the referral program on the backend. Check back soon to invite friends and earn CL bonuses.
           </p>
           <Button
             onClick={handleShareLink}
-            className="w-full bg-white/10 hover:bg-white/20 text-[#FF0033] uppercase tracking-wider min-h-[48px] touch-manipulation"
+            disabled
+            className="w-full bg-white/5 text-white/40 uppercase tracking-wider min-h-[48px] touch-manipulation cursor-not-allowed"
           >
             <Share2 size={14} className="mr-2" />
-            SHARE LINK
+            COMING SOON
           </Button>
         </GlassCard>
       </div>

@@ -3,7 +3,7 @@
 Cladhunter runs as a small monorepo: Vite frontend, Express backend, shared TypeScript configs, and a Neon PostgreSQL database. This guide covers the minimum configuration needed to launch the stack.
 
 ---
-
+пуш
 ## 1. Prepare the Database (Neon)
 
 1. Create a Neon project and database.

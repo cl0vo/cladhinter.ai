@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { GlassCard } from './GlassCard';
+import { TonConnectButton } from './TonConnectButton';
 import { Activity, Award, Clock, TrendingUp, Zap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useApi } from '../hooks/useApi';
@@ -104,15 +105,12 @@ export function StatsScreen({ onStartMining }: StatsScreenProps) {
             Connect Wallet
           </p>
           <p className="text-white/40 text-sm leading-relaxed">
-            Connect your TON wallet to unlock detailed mining statistics and history.
+            Connect your TON wallet to unlock detailed mining statistics and start earning CL.
           </p>
         </GlassCard>
-        <Button
-          onClick={onStartMining}
-          className="w-full max-w-sm bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px] touch-manipulation"
-        >
-          Start Mining
-        </Button>
+        <div className="w-full max-w-sm">
+          <TonConnectButton />
+        </div>
       </div>
     );
   }
@@ -132,7 +130,7 @@ export function StatsScreen({ onStartMining }: StatsScreenProps) {
 
       <GlassCard className="p-5 mb-5 text-center" glowEffect>
         <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL MINED</p>
-        <p className="text-3xl sm:text-4xl text-[#FF0033]">{totalMined.toFixed(1)} CLD</p>
+        <p className="text-3xl sm:text-4xl text-[#FF0033]">{totalMined.toFixed(1)} CL</p>
         <p className="text-white/40 text-xs mt-2">
           {todayWatches}/{dailyLimit} ads watched today
         </p>
@@ -156,7 +154,7 @@ export function StatsScreen({ onStartMining }: StatsScreenProps) {
         <GlassCard className="p-3 text-center">
           <Award size={16} className="text-[#FF0033] mx-auto mb-2" />
           <p className="text-[10px] uppercase text-white/60 mb-1">AVG REWARD</p>
-          <p className="text-white text-lg">{avgPerAd.toFixed(1)} CLD</p>
+          <p className="text-white text-lg">{avgPerAd.toFixed(1)} CL</p>
           <p className="text-white/40 text-[9px] mt-1">Per ad</p>
         </GlassCard>
 
@@ -183,7 +181,7 @@ export function StatsScreen({ onStartMining }: StatsScreenProps) {
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-[#FF0033]">+{session.reward} CLD</span>
+                    <span className="text-[#FF0033]">+{session.reward} CL</span>
                     <span className="text-white/40 text-xs">{formatTime(session.created_at)}</span>
                   </div>
                   <div className="text-right flex-shrink-0">

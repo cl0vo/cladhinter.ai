@@ -8,16 +8,9 @@ import { Zap, Gift, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
-import { useApi } from '../hooks/useApi';
+import { apiRequest } from '../utils/api/client';
 import { boostMultiplier } from '@shared/config/economy';
 import { getRandomAd, type AdCreative } from '@shared/config/ads';
-
-interface AdResponse {
-  id: string;
-  url: string;
-  reward: number;
-  type: string;
-}
 
 interface AdCompleteResponse {
   success: boolean;
@@ -30,14 +23,16 @@ interface AdCompleteResponse {
 export function MiningScreen() {
   const { user } = useAuth();
   const { userData, refreshBalance } = useUserData();
-  const { makeRequest } = useApi();
   
   const [isMining, setIsMining] = useState(false);
   const [miningProgress, setMiningProgress] = useState(0);
-  const [currentAd, setCurrentAd] = useState<AdResponse | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [isAdModalOpen, setIsAdModalOpen] = useState(false);
   const [currentAdCreative, setCurrentAdCreative] = useState<AdCreative | null>(null);
+  const isWalletConnected = Boolean(user);
+  const hasUserData = Boolean(userData);
+  const isCooldownActive = cooldownRemaining > 0;
+  const isButtonDisabled = !isWalletConnected || !hasUserData || isMining || isCooldownActive;
 
   // Cooldown timer
   useEffect(() => {
@@ -49,13 +44,30 @@ export function MiningScreen() {
     }
   }, [cooldownRemaining]);
 
-  const handleStartMining = async () => {
-    if (isMining || !user || cooldownRemaining > 0) return;
-    
+  const handleStartMining = () => {
+    if (isMining) {
+      return;
+    }
+
+    if (!isWalletConnected) {
+      toast.error('Please connect your TON wallet to start mining.');
+      return;
+    }
+
+    if (!hasUserData) {
+      toast.error('We are syncing your profile. Please try again in a moment.');
+      return;
+    }
+
+    if (isCooldownActive) {
+      toast.error('Please wait for the cooldown to finish before mining again.');
+      return;
+    }
+
     // Get a random ad creative
     const adCreative = getRandomAd();
     setCurrentAdCreative(adCreative);
-    
+
     // Open ad modal
     setIsAdModalOpen(true);
   };
@@ -80,41 +92,45 @@ export function MiningScreen() {
   };
 
   const completeAdWatch = async (adId: string) => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
-    const result = await makeRequest<AdCompleteResponse>(
-      '/ads/complete',
-      {
+    try {
+      const result = await apiRequest<AdCompleteResponse>('/ads/complete', {
         method: 'POST',
         body: JSON.stringify({ ad_id: adId }),
-      },
-      user.accessToken,
-      user.id
-    );
+        accessToken: user.accessToken,
+        userId: user.id,
+      });
 
-    setIsMining(false);
-    setMiningProgress(0);
-    setCurrentAd(null);
-
-    if (result) {
       const multiplierText = result.multiplier > 1 ? ` (x${result.multiplier})` : '';
-      toast.success(`+${result.reward} 🆑 mined successfully${multiplierText}!`);
-      
-      // Refresh balance
+      toast.success(`+${result.reward} CL mined successfully${multiplierText}!`);
+
       await refreshBalance();
-      
-      // Set cooldown
       setCooldownRemaining(30);
-      
-      // Show remaining watches
+
       if (result.daily_watches_remaining <= 10) {
         toast(`${result.daily_watches_remaining} ad views remaining today`, {
           duration: 3000,
         });
       }
-    } else {
-      // Check if it's a cooldown error
-      setCooldownRemaining(30);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to complete the mining session.';
+
+      if (/cooldown/i.test(message)) {
+        toast.error('Please wait for the cooldown to finish before mining again.');
+      } else if (/daily limit/i.test(message)) {
+        toast.error('Daily ad limit reached. Try again tomorrow.');
+      } else {
+        toast.error('Unable to complete the mining session. Please try again.');
+      }
+
+      setCooldownRemaining((previous) => (previous > 0 ? previous : 30));
+    } finally {
+      setIsMining(false);
+      setMiningProgress(0);
     }
   };
 
@@ -137,10 +153,10 @@ export function MiningScreen() {
       {/* Header */}
       <div className="text-center mb-6">
         <h1 className="text-xl tracking-wider mb-2 text-[#FF0033] uppercase">
-          CLADHUNTER 🆑
+          CLADHUNTER CL
         </h1>
         <p className="text-white/60 tracking-wide uppercase">
-          BALANCE: {balance.toFixed(1)} 🆑
+          BALANCE: {balance.toFixed(1)} CL
         </p>
         {currentMultiplier > 1 && (
           <p className="text-[#FF0033] text-xs mt-1">
@@ -162,10 +178,10 @@ export function MiningScreen() {
       <div className="relative mb-6 flex-shrink-0">
         <motion.button
           onClick={handleStartMining}
-          disabled={isMining || cooldownRemaining > 0}
-          className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-full bg-gradient-to-br from-[#FF0033]/20 to-[#FF0033]/5 border-2 border-[#FF0033] flex items-center justify-center disabled:opacity-50 touch-manipulation"
-          whileHover={{ scale: isMining || cooldownRemaining > 0 ? 1 : 1.05 }}
-          whileTap={{ scale: isMining || cooldownRemaining > 0 ? 1 : 0.95 }}
+          disabled={isButtonDisabled}
+          className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-full bg-gradient-to-br from-[#FF0033]/20 to-[#FF0033]/5 border-2 border-[#FF0033] flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+          whileHover={{ scale: isButtonDisabled ? 1 : 1.05 }}
+          whileTap={{ scale: isButtonDisabled ? 1 : 0.95 }}
           animate={
             isMining
               ? {
@@ -186,7 +202,21 @@ export function MiningScreen() {
           }}
         >
           <div className="text-center px-4">
-            {cooldownRemaining > 0 ? (
+            {!isWalletConnected ? (
+              <>
+                <p className="text-[#FF0033] uppercase tracking-widest mb-2">
+                  CONNECT WALLET
+                </p>
+                <p className="text-white/60 text-xs uppercase">TON REQUIRED</p>
+              </>
+            ) : !hasUserData ? (
+              <>
+                <p className="text-[#FF0033]/60 uppercase tracking-widest mb-2">
+                  SYNCING PROFILE
+                </p>
+                <p className="text-white/60 text-xs uppercase">PLEASE WAIT...</p>
+              </>
+            ) : isCooldownActive ? (
               <>
                 <p className="text-[#FF0033]/60 uppercase tracking-widest mb-2">
                   COOLDOWN
