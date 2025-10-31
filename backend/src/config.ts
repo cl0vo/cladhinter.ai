@@ -12,6 +12,8 @@ const DEFAULT_TON_PROOF_ALLOWED_DOMAINS = [
   'localhost:5173',
   '127.0.0.1:5173',
   'cladhunter-ai-frontend.vercel.app',
+  'cladhunter.app',
+  'www.cladhunter.app',
 ];
 
 function parseInteger(value: string | undefined, fallback: number): number {

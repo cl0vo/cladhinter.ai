@@ -160,7 +160,14 @@ export function useAuth() {
         currentChallengeRef.current = response.payload;
         tonConnectUI.setConnectRequestParameters({
           state: 'ready',
-          value: { tonProof: response.payload },
+          value: {
+            items: [
+              {
+                name: 'ton-proof',
+                payload: response.payload,
+              },
+            ],
+          },
         });
       } else {
         currentChallengeRef.current = null;
