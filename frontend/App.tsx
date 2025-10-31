@@ -57,7 +57,9 @@ export default function App() {
             ) : (
               <>
                 {activeScreen === 'mining' && <MiningScreen />}
-                {activeScreen === 'stats' && <StatsScreen />}
+                {activeScreen === 'stats' && (
+                  <StatsScreen onStartMining={() => handleNavigate('mining')} />
+                )}
                 {activeScreen === 'wallet' && <WalletScreen />}
               </>
             )}
