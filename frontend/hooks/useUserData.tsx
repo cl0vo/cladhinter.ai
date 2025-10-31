@@ -8,10 +8,13 @@ import {
   type ReactNode,
 } from 'react';
 
+import { PRIMARY_CURRENCY, SECONDARY_CURRENCY, buildBalanceBreakdown } from '@shared/config/currency';
+
 import { useAuth } from './useAuth';
 import { useApi } from './useApi';
+import type { CurrencySnapshot } from '../types';
 
-export interface UserData {
+export interface UserData extends CurrencySnapshot {
   id: string;
   energy: number;
   boost_level: number;
@@ -71,24 +74,37 @@ export function UserDataProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const data = await makeRequest<{
-      energy: number;
-      boost_level: number;
-      multiplier: number;
-      boost_expires_at: string | null;
-    }>('/user/balance', { method: 'GET' }, user.accessToken, user.id);
+    const data = await makeRequest<
+      {
+        energy: number;
+        boost_level: number;
+        multiplier: number;
+        boost_expires_at: string | null;
+      } & CurrencySnapshot
+    >('/user/balance', { method: 'GET' }, user.accessToken, user.id);
 
     if (data) {
       setUserData((previous) => ({
-        ...(previous ?? {
-          id: user.id,
-          energy: 0,
-          boost_level: 0,
-          boost_expires_at: null,
-        }),
+        ...(previous ??
+          {
+            id: user.id,
+            energy: 0,
+            boost_level: 0,
+            boost_expires_at: null,
+            cl_balance: 0,
+            ton_equivalent: 0,
+            balances: buildBalanceBreakdown(0),
+            primary_currency: PRIMARY_CURRENCY,
+            secondary_currency: SECONDARY_CURRENCY,
+          }),
         energy: data.energy,
         boost_level: data.boost_level,
         boost_expires_at: data.boost_expires_at,
+        cl_balance: data.cl_balance,
+        ton_equivalent: data.ton_equivalent,
+        balances: data.balances,
+        primary_currency: data.primary_currency,
+        secondary_currency: data.secondary_currency,
       }));
     }
   }, [user, makeRequest]);

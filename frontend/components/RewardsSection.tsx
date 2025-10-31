@@ -10,6 +10,7 @@ import { useAuth } from '../hooks/useAuth';
 import type { ClaimRewardResponse, RewardStatusResponse } from '../types';
 import { hapticFeedback } from '../utils/telegram';
 import { GlassCard } from './GlassCard';
+import { formatCl } from '../utils/helpers';
 
 interface RewardsSectionProps {
   onRewardClaimed?: () => void;
@@ -77,7 +78,7 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
 
       if (response) {
         setClaimedPartners((previous) => [...previous, partner.id]);
-        toast.success(`+${response.reward} energy earned`, {
+        toast.success(`+${formatCl(response.reward)} CL earned`, {
           description: `Thanks for supporting ${response.partner_name}.`,
         });
         hapticFeedback('notification', 'success');
@@ -141,7 +142,7 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
                       <>
                         <span className="text-white/30">|</span>
                         <p className="text-[10px] uppercase text-[#FF0033]">
-                          +{partner.reward} energy
+                          +{formatCl(partner.reward)} CL
                         </p>
                       </>
                     )}

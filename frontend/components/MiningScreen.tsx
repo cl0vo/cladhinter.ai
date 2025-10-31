@@ -11,6 +11,7 @@ import { useUserData } from '../hooks/useUserData';
 import { apiRequest } from '../utils/api/client';
 import { boostMultiplier } from '@shared/config/economy';
 import { getRandomAd, type AdCreative } from '@shared/config/ads';
+import { formatCl } from '../utils/helpers';
 
 interface AdCompleteResponse {
   success: boolean;
@@ -140,7 +141,7 @@ export function MiningScreen() {
   };
 
   const currentMultiplier = userData ? boostMultiplier(userData.boost_level) : 1;
-  const balance = userData?.energy || 0;
+  const balance = userData?.cl_balance ?? userData?.energy ?? 0;
 
   const boostCards = [
     { icon: Zap, label: 'X2 REWARD', duration: '15 MIN', premium: true },
@@ -156,7 +157,7 @@ export function MiningScreen() {
           CLADHUNTER CL
         </h1>
         <p className="text-white/60 tracking-wide uppercase">
-          BALANCE: {balance.toFixed(1)} CL
+          BALANCE: {formatCl(balance)} CL
         </p>
         {currentMultiplier > 1 && (
           <p className="text-[#FF0033] text-xs mt-1">

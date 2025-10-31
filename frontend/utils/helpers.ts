@@ -1,3 +1,5 @@
+import { formatCurrency } from '@shared/config/currency';
+
 // Helper utilities for Cladhunter
 
 /**
@@ -20,19 +22,24 @@ export function formatDate(dateString: string): string {
 }
 
 /**
- * Format energy amount with proper decimals
+ * Format CL amount with proper decimals
+ */
+export function formatCl(amount: number): string {
+  return formatCurrency(amount, 'CL');
+}
+
+/**
+ * Legacy helper kept for backwards compatibility. Use formatCl instead.
  */
 export function formatEnergy(energy: number): string {
-  if (energy < 1) return energy.toFixed(2);
-  if (energy < 100) return energy.toFixed(1);
-  return Math.floor(energy).toString();
+  return formatCl(energy);
 }
 
 /**
  * Format TON amount
  */
 export function formatTon(ton: number): string {
-  return ton.toFixed(ton < 1 ? 6 : 2);
+  return formatCurrency(ton, 'TON');
 }
 
 /**

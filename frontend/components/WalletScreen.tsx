@@ -8,12 +8,16 @@ import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
 import { useTonConnect } from '../hooks/useTonConnect';
-import { BOOSTS, energyToTon } from '@shared/config/economy';
+import { BOOSTS } from '@shared/config/economy';
+import type { CurrencyCode } from '@shared/config/currency';
+import { formatCl, formatTon } from '../utils/helpers';
 
 interface OrderResponse {
   order_id: string;
   address: string;
   amount: number;
+  amount_cl: number;
+  currency: CurrencyCode;
   payload: string;
   boost_name: string;
   duration_days: number;
@@ -44,8 +48,8 @@ export function WalletScreen() {
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
   const [isSendingTx, setIsSendingTx] = useState(false);
 
-  const balance = userData?.energy || 0;
-  const balanceInTon = energyToTon(balance);
+  const clBalance = userData?.cl_balance ?? userData?.energy ?? 0;
+  const tonBalance = userData?.ton_equivalent ?? userData?.balances?.TON ?? 0;
   const currentBoostLevel = userData?.boost_level || 0;
 
   const handleCopyAddress = () => {
@@ -157,12 +161,12 @@ export function WalletScreen() {
     }
   };
 
-  const premiumBoosts = BOOSTS.slice(1).map(boost => ({
+  const premiumBoosts = BOOSTS.slice(1).map((boost) => ({
     level: boost.level,
     icon: boost.level === 1 ? TrendingUp : boost.level === 2 ? Zap : boost.level === 3 ? Shield : Zap,
     label: boost.name.toUpperCase(),
-    duration: `${boost.durationDays} DAYS`,
-    price: `${boost.costTon} TON`,
+    duration: boost.durationDays ? `${boost.durationDays} DAYS` : 'PREMIUM',
+    price: `${formatTon(boost.costTon)} TON`,
     multiplier: `x${boost.multiplier}`,
     isActive: currentBoostLevel === boost.level,
   }));
@@ -185,8 +189,8 @@ export function WalletScreen() {
       {/* Balance Card */}
       <GlassCard className="p-5 mb-5 text-center" glowEffect>
         <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL BALANCE</p>
-        <p className="text-4xl sm:text-5xl text-[#FF0033] mb-1">{balance.toFixed(1)} CL</p>
-        <p className="text-white/40 text-xs mb-5">~ {balanceInTon.toFixed(6)} TON</p>
+        <p className="text-4xl sm:text-5xl text-[#FF0033] mb-1">{formatCl(clBalance)} CL</p>
+        <p className="text-white/40 text-xs mb-5">~ {formatTon(tonBalance)} TON</p>
         <div className="flex gap-2">
           <Button
             className="flex-1 bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px] touch-manipulation text-xs"
@@ -210,9 +214,9 @@ export function WalletScreen() {
       {pendingOrder && (
         <GlassCard className="p-4 mb-5 border-2 border-[#FF0033]">
           <p className="text-[#FF0033] uppercase tracking-wider mb-3">PENDING PAYMENT</p>
-          <p className="text-white/80 text-sm mb-2">
-            Send {pendingOrder.amount} TON to:
-          </p>
+            <p className="text-white/80 text-sm mb-2">
+            Send {formatTon(pendingOrder.amount)} {pendingOrder.currency ?? 'TON'} (~ {formatCl(pendingOrder.amount_cl)} CL) to:
+            </p>
           <p className="text-white/60 text-xs mb-3 break-all">
             {pendingOrder.address}
           </p>

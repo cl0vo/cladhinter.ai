@@ -15,6 +15,12 @@ import {
   boostMultiplier,
 } from '@shared/config/economy';
 import type { Boost } from '@shared/config/economy';
+import {
+  PRIMARY_CURRENCY,
+  SECONDARY_CURRENCY,
+  buildBalanceBreakdown,
+  convertCurrency,
+} from '@shared/config/currency';
 import { getActivePartners, getPartnerById } from '@shared/config/partners';
 import type { PartnerReward } from '@shared/config/partners';
 
@@ -32,6 +38,32 @@ function buildOrderComment(orderId: string): string {
 function encodeCommentToPayload(comment: string): string {
   const cell = beginCell().storeUint(0, 32).storeStringTail(comment).endCell();
   return cell.toBoc({ idx: false }).toString('base64');
+}
+
+function buildCurrencySnapshot(clBalance: number) {
+  const balances = buildBalanceBreakdown(clBalance);
+  const tonEquivalent = SECONDARY_CURRENCY ? balances[SECONDARY_CURRENCY] : 0;
+
+  return {
+    cl_balance: clBalance,
+    ton_equivalent: tonEquivalent,
+    balances,
+    primary_currency: PRIMARY_CURRENCY,
+    secondary_currency: SECONDARY_CURRENCY,
+  };
+}
+
+function buildAmountSummary(clAmount: number) {
+  const balances = buildBalanceBreakdown(clAmount);
+  const tonEquivalent = SECONDARY_CURRENCY ? balances[SECONDARY_CURRENCY] : 0;
+
+  return {
+    amount_cl: clAmount,
+    amount_ton: tonEquivalent,
+    breakdown: balances,
+    currency: PRIMARY_CURRENCY,
+    secondary_currency: SECONDARY_CURRENCY,
+  };
 }
 
 type OrderStatus = 'pending' | 'paid' | 'cancelled';
@@ -279,6 +311,7 @@ export async function initUser(userId: string): Promise<{
       energy: user.energy,
       boost_level: user.boostLevel,
       boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+      ...buildCurrencySnapshot(user.energy),
     },
   };
 }
@@ -290,6 +323,7 @@ export async function getUserBalance(userId: string) {
     boost_level: user.boostLevel,
     multiplier: boostMultiplier(user.boostLevel),
     boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
+    ...buildCurrencySnapshot(user.energy),
   };
 }
 
@@ -370,17 +404,22 @@ export async function completeAdWatch({
       ],
     );
 
-    const remaining = Math.max(0, DAILY_VIEW_LIMIT - updatedUser.dailyWatchCount);
+      const remaining = Math.max(0, DAILY_VIEW_LIMIT - updatedUser.dailyWatchCount);
+      const balanceSnapshot = buildCurrencySnapshot(updatedUser.energy);
+      const rewardSummary = buildAmountSummary(reward);
 
-    return {
-      success: true,
-      reward,
-      new_balance: updatedUser.energy,
-      multiplier,
-      daily_watches_remaining: remaining,
-    };
-  });
-}
+      return {
+        success: true,
+        reward,
+        reward_currency: PRIMARY_CURRENCY,
+        reward_summary: rewardSummary,
+        new_balance: updatedUser.energy,
+        multiplier,
+        daily_watches_remaining: remaining,
+        ...balanceSnapshot,
+      };
+    });
+  }
 
 export async function getUserStats(userId: string) {
   const user = await withConnection(async (client) => upsertUser(client, userId));
@@ -397,11 +436,26 @@ export async function getUserStats(userId: string) {
 
   const todayKey = formatDateKey(new Date());
   const todayWatches = user.dailyWatchDate === todayKey ? user.dailyWatchCount : 0;
+  const balanceSnapshot = buildCurrencySnapshot(user.energy);
+  const lifetimeSummary = buildAmountSummary(user.totalEarned);
+  const watchHistory = recentWatches.rows.map((row) => ({
+    id: row.id,
+    user_id: row.user_id,
+    ad_id: row.ad_id,
+    reward: row.reward,
+    reward_currency: PRIMARY_CURRENCY,
+    reward_summary: buildAmountSummary(row.reward),
+    base_reward: row.base_reward,
+    base_reward_summary: buildAmountSummary(row.base_reward),
+    multiplier: row.multiplier,
+    created_at: new Date(row.created_at).toISOString(),
+  }));
 
   return {
     total_energy: user.energy,
     total_watches: user.totalWatches,
     total_earned: user.totalEarned,
+    total_earned_summary: lifetimeSummary,
     total_sessions: user.sessionCount,
     today_watches: todayWatches,
     daily_limit: DAILY_VIEW_LIMIT,
@@ -409,15 +463,8 @@ export async function getUserStats(userId: string) {
     multiplier: boostMultiplier(user.boostLevel),
     boost_expires_at: user.boostExpiresAt ? user.boostExpiresAt.toISOString() : null,
     reward_claims: Number(claimedRewardsCount.rows[0]?.count ?? '0'),
-    watch_history: recentWatches.rows.map((row) => ({
-      id: row.id,
-      user_id: row.user_id,
-      ad_id: row.ad_id,
-      reward: row.reward,
-      base_reward: row.base_reward,
-      multiplier: row.multiplier,
-      created_at: new Date(row.created_at).toISOString(),
-    })),
+    watch_history: watchHistory,
+    ...balanceSnapshot,
   };
 }
 
@@ -427,7 +474,7 @@ export async function createOrder({
 }: {
   userId: string;
   boostLevel: number;
-}) {
+  }) {
   const boost = findBoost(boostLevel);
   if (!boost || boost.costTon <= 0) {
     throw new Error('Selected boost is not purchasable');
@@ -437,17 +484,21 @@ export async function createOrder({
   const orderComment = buildOrderComment(orderId);
   const payloadBoc = encodeCommentToPayload(orderComment);
   const walletAddress = getMerchantWalletAddress();
+  const tonAmount = boost.costTon;
+  const clEquivalent = convertCurrency(tonAmount, 'TON', PRIMARY_CURRENCY);
 
   await query(
     `INSERT INTO orders (id, user_id, boost_level, ton_amount, payload, address, status, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-    [orderId, userId, boost.level, boost.costTon, orderComment, walletAddress, 'pending'],
+    [orderId, userId, boost.level, tonAmount, orderComment, walletAddress, 'pending'],
   );
 
   return {
     order_id: orderId,
     address: walletAddress,
-    amount: boost.costTon,
+    amount: tonAmount,
+    currency: SECONDARY_CURRENCY,
+    amount_cl: clEquivalent,
     payload: payloadBoc,
     boost_name: boost.name,
     duration_days: boost.durationDays ?? null,
@@ -613,13 +664,18 @@ export async function claimReward({
       [randomUUID(), userId, partnerId, partner.reward, partner.name],
     );
 
-    const energy = Number(updated.rows[0]?.energy ?? (user.energy ?? 0) + partner.reward);
+      const energy = Number(updated.rows[0]?.energy ?? (user.energy ?? 0) + partner.reward);
+      const balanceSnapshot = buildCurrencySnapshot(energy);
+      const rewardSummary = buildAmountSummary(partner.reward);
 
-    return {
-      success: true,
-      reward: partner.reward,
-      new_balance: energy,
-      partner_name: partner.name,
-    };
-  });
-}
+      return {
+        success: true,
+        reward: partner.reward,
+        reward_currency: PRIMARY_CURRENCY,
+        reward_summary: rewardSummary,
+        new_balance: energy,
+        partner_name: partner.name,
+        ...balanceSnapshot,
+      };
+    });
+  }

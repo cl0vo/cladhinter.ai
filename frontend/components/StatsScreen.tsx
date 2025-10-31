@@ -6,6 +6,7 @@ import { Activity, Award, Clock, TrendingUp, Zap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useApi } from '../hooks/useApi';
 import type { UserStatsResponse } from '../types';
+import { formatCl } from '../utils/helpers';
 
 interface StatsScreenProps {
   onStartMining: () => void;
@@ -130,7 +131,7 @@ export function StatsScreen({ onStartMining }: StatsScreenProps) {
 
       <GlassCard className="p-5 mb-5 text-center" glowEffect>
         <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL MINED</p>
-        <p className="text-3xl sm:text-4xl text-[#FF0033]">{totalMined.toFixed(1)} CL</p>
+        <p className="text-3xl sm:text-4xl text-[#FF0033]">{formatCl(totalMined)} CL</p>
         <p className="text-white/40 text-xs mt-2">
           {todayWatches}/{dailyLimit} ads watched today
         </p>
@@ -154,7 +155,7 @@ export function StatsScreen({ onStartMining }: StatsScreenProps) {
         <GlassCard className="p-3 text-center">
           <Award size={16} className="text-[#FF0033] mx-auto mb-2" />
           <p className="text-[10px] uppercase text-white/60 mb-1">AVG REWARD</p>
-          <p className="text-white text-lg">{avgPerAd.toFixed(1)} CL</p>
+          <p className="text-white text-lg">{formatCl(avgPerAd)} CL</p>
           <p className="text-white/40 text-[9px] mt-1">Per ad</p>
         </GlassCard>
 
@@ -181,7 +182,7 @@ export function StatsScreen({ onStartMining }: StatsScreenProps) {
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-[#FF0033]">+{session.reward} CL</span>
+                    <span className="text-[#FF0033]">+{formatCl(session.reward)} CL</span>
                     <span className="text-white/40 text-xs">{formatTime(session.created_at)}</span>
                   </div>
                   <div className="text-right flex-shrink-0">
