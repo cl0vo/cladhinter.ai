@@ -40,6 +40,7 @@ export function WalletScreen() {
   const { sendTransaction, isConnected } = useTonConnect();
   
   const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
+  const [merchantAddress, setMerchantAddress] = useState<string | null>(null);
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
   const [isSendingTx, setIsSendingTx] = useState(false);
 
@@ -48,7 +49,19 @@ export function WalletScreen() {
   const currentBoostLevel = userData?.boost_level || 0;
 
   const handleCopyAddress = () => {
-    toast.success('Address copied to clipboard!');
+    const addressToCopy = pendingOrder?.address ?? merchantAddress;
+    if (!addressToCopy) {
+      toast.error('Merchant address is not available yet. Try again after creating an order.');
+      return;
+    }
+
+    navigator.clipboard
+      .writeText(addressToCopy)
+      .then(() => toast.success('Address copied to clipboard!'))
+      .catch((err) => {
+        console.error('Clipboard error:', err);
+        toast.error('Unable to copy address. Please copy it manually.');
+      });
   };
 
   const handleShareLink = () => {
@@ -81,40 +94,24 @@ export function WalletScreen() {
       );
 
       if (orderData) {
-        // Send transaction via TON Connect
+        setPendingOrder(orderData);
+        setMerchantAddress(orderData.address);
+
         setIsSendingTx(true);
         try {
           const amountInNanoTon = Math.floor(orderData.amount * 1_000_000_000).toString();
-          
-          const txResult = await sendTransaction({
+
+          await sendTransaction({
             to: orderData.address,
             amount: amountInNanoTon,
             payload: orderData.payload,
           });
 
-          if (txResult) {
-            toast.success('Transaction sent! Confirming boost...');
-            
-            // Confirm payment on server
-            const result = await makeRequest<ConfirmResponse>(
-              `/orders/${orderData.order_id}/confirm`,
-              { 
-                method: 'POST',
-                body: JSON.stringify({ tx_hash: txResult.boc }),
-              },
-              user.accessToken,
-              user.id
-            );
-
-            if (result) {
-              toast.success(`${orderData.boost_name} boost activated! x${result.multiplier} multiplier`);
-              await refreshBalance();
-            }
-          }
+          toast.success('Transaction sent! Waiting for TON confirmation.');
+          toast.info('Boost will activate after the payment is confirmed on-chain.');
         } catch (txError) {
           console.error('Transaction error:', txError);
           toast.error('Transaction failed. Please try again.');
-          setPendingOrder(orderData); // Set as pending for manual confirmation
         } finally {
           setIsSendingTx(false);
         }
@@ -129,17 +126,34 @@ export function WalletScreen() {
   const handleConfirmPayment = async () => {
     if (!user || !pendingOrder) return;
 
-    const result = await makeRequest<ConfirmResponse>(
-      `/orders/${pendingOrder.order_id}/confirm`,
-      { method: 'POST' },
-      user.accessToken,
-      user.id
+    const txReference = window.prompt(
+      'Enter the TON transaction hash from your wallet to confirm the boost:'
     );
+    if (!txReference) {
+      toast.error('Transaction hash is required to confirm the boost.');
+      return;
+    }
 
-    if (result) {
-      toast.success(`${pendingOrder.boost_name} boost activated! x${result.multiplier} multiplier`);
-      setPendingOrder(null);
-      await refreshBalance();
+    try {
+      const trimmedHash = txReference.trim();
+      const result = await makeRequest<ConfirmResponse>(
+        `/orders/${pendingOrder.order_id}/confirm`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ tx_hash: trimmedHash }),
+        },
+        user.accessToken,
+        user.id
+      );
+
+      if (result) {
+        toast.success(`${pendingOrder.boost_name} boost activated! x${result.multiplier} multiplier`);
+        setPendingOrder(null);
+        await refreshBalance();
+      }
+    } catch (error) {
+      console.error('Manual confirmation error:', error);
+      toast.error('Payment has not been confirmed on-chain yet. Please try again in a moment.');
     }
   };
 
@@ -171,16 +185,20 @@ export function WalletScreen() {
       {/* Balance Card */}
       <GlassCard className="p-5 mb-5 text-center" glowEffect>
         <p className="text-white/60 text-xs uppercase tracking-wider mb-2">TOTAL BALANCE</p>
-        <p className="text-4xl sm:text-5xl text-[#FF0033] mb-1">{balance.toFixed(1)} 🆑</p>
-        <p className="text-white/40 text-xs mb-5">≈ {balanceInTon.toFixed(6)} TON</p>
+        <p className="text-4xl sm:text-5xl text-[#FF0033] mb-1">{balance.toFixed(1)} CL</p>
+        <p className="text-white/40 text-xs mb-5">~ {balanceInTon.toFixed(6)} TON</p>
         <div className="flex gap-2">
-          <Button className="flex-1 bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px] touch-manipulation text-xs">
+          <Button
+            className="flex-1 bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px] touch-manipulation text-xs"
+            disabled
+          >
             <ArrowUpFromLine size={14} className="mr-1" />
-            WITHDRAW
+            WITHDRAW (COMING SOON)
           </Button>
           <Button
             onClick={handleCopyAddress}
-            className="flex-1 bg-white/10 hover:bg-white/20 text-white uppercase tracking-wider min-h-[48px] touch-manipulation text-xs"
+            className="flex-1 bg-white/10 hover:bg-white/20 text-white uppercase tracking-wider min-h-[48px] touch-manipulation text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={!pendingOrder && !merchantAddress}
           >
             <Copy size={14} className="mr-1" />
             COPY
@@ -199,13 +217,13 @@ export function WalletScreen() {
             {pendingOrder.address}
           </p>
           <p className="text-white/50 text-xs mb-3">
-            Payload: {pendingOrder.payload}
+            The boost will activate automatically once the transaction is final. If your wallet already shows the transaction hash, paste it below to confirm immediately.
           </p>
           <Button
             onClick={handleConfirmPayment}
             className="w-full bg-[#FF0033] hover:bg-[#FF0033]/80 text-white uppercase tracking-wider min-h-[48px]"
           >
-            I HAVE SENT THE PAYMENT
+            ENTER TRANSACTION HASH
           </Button>
         </GlassCard>
       )}
@@ -215,10 +233,10 @@ export function WalletScreen() {
         <p className="text-white/60 text-xs uppercase tracking-wider mb-3">REFERRALS</p>
         <GlassCard className="p-4">
           <p className="text-white/80 mb-2">
-            INVITE FRIENDS — EARN 10%
+            INVITE FRIENDS - EARN 10%
           </p>
           <p className="text-white/50 text-xs mb-3">
-            (CAP 50 🆑/MONTH PER FRIEND)
+            (CAP 50 CL/MONTH PER FRIEND)
           </p>
           <Button
             onClick={handleShareLink}
@@ -304,7 +322,7 @@ export function WalletScreen() {
                   )}
                   <div className="min-w-0">
                     <p className={`${tx.type === 'withdrawal' ? 'text-white/60' : 'text-[#FF0033]'}`}>
-                      {tx.amount} 🆑
+                      {tx.amount} CL
                     </p>
                     <p className="text-[10px] text-white/50 uppercase truncate">{tx.label}</p>
                   </div>

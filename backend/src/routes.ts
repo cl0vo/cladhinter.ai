@@ -244,7 +244,10 @@ router.post(
   '/orders/:orderId/confirm',
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const schema = z.object({
-      tx_hash: z.string().optional(),
+      tx_hash: z
+        .string()
+        .trim()
+        .min(1, 'tx_hash is required'),
     });
     const { tx_hash } = schema.parse(req.body ?? {});
     const result = await confirmOrder({

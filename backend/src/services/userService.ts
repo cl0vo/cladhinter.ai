@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { beginCell } from '@ton/core';
+
 import { customAlphabet } from 'nanoid';
 import type { PoolClient, QueryResultRow } from 'pg';
 
@@ -18,9 +20,19 @@ import type { PartnerReward } from '@shared/config/partners';
 
 import { getMerchantWalletAddress } from '../config';
 import { query, withConnection, withTransaction, type SqlExecutor } from '../db';
-import { verifyTonTransfer } from './tonService';
+import { canonicalizeTransactionHash, verifyTonTransfer } from './tonService';
 
 const nanoId = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 24);
+const ORDER_COMMENT_PREFIX = 'cladhunter';
+
+function buildOrderComment(orderId: string): string {
+  return `${ORDER_COMMENT_PREFIX}:${orderId}`;
+}
+
+function encodeCommentToPayload(comment: string): string {
+  const cell = beginCell().storeUint(0, 32).storeStringTail(comment).endCell();
+  return cell.toBoc({ idx: false }).toString('base64');
+}
 
 type OrderStatus = 'pending' | 'paid' | 'cancelled';
 
@@ -154,7 +166,7 @@ async function upsertUser(executor: SqlExecutor, userId: string): Promise<UserEn
 async function settleOrderPayment(
   client: PoolClient,
   order: OrderRow,
-  txHash: string | null,
+  txHash: string,
 ): Promise<OrderSettlementResult> {
   const boost = findBoost(order.boost_level);
   const now = new Date();
@@ -165,7 +177,7 @@ async function settleOrderPayment(
   await client.query(
     `UPDATE orders
        SET status = 'paid',
-           tx_hash = COALESCE($3, tx_hash),
+           tx_hash = $3,
            paid_at = $2
      WHERE id = $1`,
     [order.id, now.toISOString(), txHash],
@@ -422,20 +434,21 @@ export async function createOrder({
   }
 
   const orderId = nanoId();
-  const payload = nanoId();
+  const orderComment = buildOrderComment(orderId);
+  const payloadBoc = encodeCommentToPayload(orderComment);
   const walletAddress = getMerchantWalletAddress();
 
   await query(
     `INSERT INTO orders (id, user_id, boost_level, ton_amount, payload, address, status, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-    [orderId, userId, boost.level, boost.costTon, payload, walletAddress, 'pending'],
+    [orderId, userId, boost.level, boost.costTon, orderComment, walletAddress, 'pending'],
   );
 
   return {
     order_id: orderId,
     address: walletAddress,
     amount: boost.costTon,
-    payload,
+    payload: payloadBoc,
     boost_name: boost.name,
     duration_days: boost.durationDays ?? null,
   };
@@ -448,10 +461,13 @@ export async function confirmOrder({
 }: {
   userId: string;
   orderId: string;
-  txHash?: string | null;
+  txHash: string;
 }) {
   if (!orderId) {
     throw new Error('Missing order_id');
+  }
+  if (!txHash) {
+    throw new Error('Missing tx_hash');
   }
 
   return withTransaction(async (client) => {
@@ -472,18 +488,17 @@ export async function confirmOrder({
       };
     }
 
-    if (txHash) {
-      const verified = await verifyTonTransfer({
-        txHash,
-        amountTon: row.ton_amount,
-        destination: row.address,
-      });
-      if (!verified) {
-        throw new Error('TON transfer not verified');
-      }
+    const canonicalTxHash = canonicalizeTransactionHash(txHash);
+    const verified = await verifyTonTransfer({
+      txHash: canonicalTxHash,
+      amountTon: row.ton_amount,
+      destination: row.address,
+    });
+    if (!verified) {
+      throw new Error('TON transfer not verified');
     }
 
-    const settlement = await settleOrderPayment(client, row, txHash ?? null);
+    const settlement = await settleOrderPayment(client, row, canonicalTxHash);
     return {
       success: true,
       ...settlement,
@@ -519,8 +534,9 @@ export async function registerTonWebhookPayment({
       };
     }
 
+    const canonicalTxHash = canonicalizeTransactionHash(txHash);
     const verified = await verifyTonTransfer({
-      txHash,
+      txHash: canonicalTxHash,
       amountTon: amountTon ?? row.ton_amount,
       destination: row.address,
     });
@@ -529,7 +545,7 @@ export async function registerTonWebhookPayment({
       throw new Error('TON transfer not verified');
     }
 
-    const settlement = await settleOrderPayment(client, row, txHash);
+    const settlement = await settleOrderPayment(client, row, canonicalTxHash);
     return {
       success: true,
       ...settlement,

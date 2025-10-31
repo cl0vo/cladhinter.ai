@@ -1,73 +1,60 @@
 # Deployment Guide (Vercel + Render + Neon)
 
-This project now ships as a small monorepo:
-
-- `frontend/` — Vite + React client (recommended target: **Vercel**)
-- `backend/` — Node/Express API (recommended target: **Render**)
-- `shared/` — shared TypeScript resources (ads, boosts, partner config)
-
-The sections below walk through the minimum configuration needed to deploy each service with a managed Postgres database on **Neon**.
+Cladhunter runs as a small monorepo: Vite frontend, Express backend, shared TypeScript configs, and a Neon PostgreSQL database. This guide covers the minimum configuration needed to launch the stack.
 
 ---
 
-## 1. Database (Neon)
+## 1. Prepare the Database (Neon)
 
-1. Create a new Neon project and database.
-2. Copy the pooled connection string (include `sslmode=require`).
-3. Initialise the schema locally by running the backend once (`npm run dev:backend`) or by letting Render run migrations on first boot.
+1. Create a Neon project and database.
+2. Copy the pooled connection string and append `sslmode=require`.
+3. Run the backend locally (`npm run dev:backend`) to execute schema bootstrap, or let Render do the first-time migration.
 
-Environment variables required by the backend:
+Key backend environment variables:
 
 | Variable | Example | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | `postgres://user:pass@...neon.tech/neondb?sslmode=require` | Required, pooled connection |
+|----------|---------|-------|
+| `DATABASE_URL` | `postgres://user:pass@...neon.tech/neondb?sslmode=require` | Required pooled connection |
 | `MERCHANT_WALLET` | `UQ...` | TON wallet that receives boost payments |
-| `CORS_ALLOWED_ORIGINS` | `https://cladhunter.vercel.app` | Comma separated list; use `*` for testing |
-| `PORT` | `4000` | Render overrides with its own port |
-| `API_RATE_LIMIT_WINDOW_MS` | `60000` | Optional, per-IP window in ms |
-| `API_RATE_LIMIT_MAX` | `120` | Optional, max requests per window |
-| `TON_API_BASE_URL` | `https://tonapi.io` | TON explorer base URL |
-| `TON_API_KEY` | `tonapi_...` | Bearer token for Tonapi (recommended) |
-| `TON_WEBHOOK_SECRET` | `super-secret` | Shared secret for webhook endpoint |
-| `TON_PROOF_ALLOWED_DOMAINS` | `localhost:5173,cladhunter-ai-frontend.vercel.app` | Domains accepted inside TonProof payload |
-| `TON_PROOF_TTL_SECONDS` | `900` | Max age for TonProof timestamp |
+| `CORS_ALLOWED_ORIGINS` | `https://cladhunter.vercel.app` | Comma separated list; use `*` only for testing |
+| `HOST` / `PORT` | `0.0.0.0` / `4000` | Render overrides port |
+| `API_RATE_LIMIT_WINDOW_MS` | `60000` | Optional per-IP window (ms) |
+| `API_RATE_LIMIT_MAX` | `120` | Optional max requests per window |
+| `TON_API_BASE_URL` | `https://tonapi.io` | TonAPI base URL |
+| `TON_API_KEY` | `tonapi_...` | TonAPI bearer token (recommended) |
+| `TON_WEBHOOK_SECRET` | `super-secret` | Shared secret expected on webhook |
 
-> Keep a copy of the connection string handy; you will paste it into Render.
+Keep the connection string handy for Render configuration.
 
 ---
 
 ## 2. Backend API (Render)
 
-1. Create a new **Web Service** on Render and point it to the repository root.
-2. Set the **Environment** to `Node`.
-3. Set the **Build Command** to `npm install && npm run build:backend`.
-4. Set the **Start Command** to `npm run start:backend`.
-5. Add the environment variables from the table above.
-6. (Optional) Configure auto-deploy and a free tier cron job if you want to keep the instance warm.
+1. Create a **Web Service** on Render and point it at the repository root.
+2. Environment: `Node`.
+3. Build command: `npm install && npm run build:backend`.
+4. Start command: `npm run start:backend`.
+5. Add the environment variables listed above.
+6. Set health check path to `/api/health`.
 
-Render will expose a URL like `https://cladhunter-api.onrender.com`. Keep that value for the frontend.
-The client now authenticates wallets via TonConnect: request a challenge from `GET /api/auth/ton-connect/challenge`, send the wallet proof to `POST /api/auth/ton-connect`, then attach `Authorization` and `X-User-ID` headers to every subsequent call.
+Render will expose a URL such as `https://cladhunter-api.onrender.com`. This value is used by the frontend.
+
+Sessions are wallet-bound. The frontend retrieves a TonConnect challenge (`GET /api/auth/ton-connect/challenge`), exchanges the signed proof via `POST /api/auth/ton-connect`, and reuses the returned `{ userId, accessToken, walletAddress }`. Boost purchases create orders, send TON with the encoded comment payload, and settle once TonAPI confirms the transaction (via webhook or a manual `/api/orders/:id/confirm` with the transaction hash).
 
 ---
 
 ## 3. Frontend (Vercel)
 
 1. Import the repository into Vercel as a project.
-2. Set the **Build Command** to `npm run build:frontend` (defaults to the repo `vercel.json`).
-3. Set the **Output Directory** to `frontend/dist` (auto-detected via `frontend/vercel.json` when using the workspace root).
-4. Configure environment variables:
+2. Build command: `npm run build:frontend`.
+3. Output directory: `frontend/dist`.
+4. Environment variables:
 
-| Variable | Value | Notes |
-| --- | --- | --- |
-| `VITE_BACKEND_URL` | `https://cladhunter-api.onrender.com` | The Render service URL (no trailing slash) |
+| Variable | Value |
+|----------|-------|
+| `VITE_BACKEND_URL` | `https://cladhunter-api.onrender.com` |
 
-5. Redeploy. Vercel will inject the `VITE_BACKEND_URL` into the build so that the client talks to the Render API.
-
-TonConnect proof is requested automatically on the frontend: the app fetches `/api/auth/ton-connect/challenge`, sets it as the connect request parameter, and sends the resulting proof back to `/api/auth/ton-connect`.
-
-> Note: The build currently emits a single ~750 kB JS chunk. Vercel logs a warning about the size, but no action is required unless you want to introduce manual chunking or dynamic imports.
-
-During local development you can override the backend URL by editing `frontend/.env`.
+Re-deploy. Vercel injects `VITE_BACKEND_URL` into the build so the client can reach the Render API. During local development override this value in `frontend/.env`.
 
 ---
 
@@ -86,28 +73,27 @@ cp frontend/.env.example frontend/.env
 npm run dev:frontend
 ```
 
-The backend listens on `http://localhost:4000` by default; the frontend proxy will call the API through `VITE_BACKEND_URL`.
+The backend listens on `http://localhost:4000`; the frontend defaults to calling `http://localhost:4000/api` unless you override `VITE_BACKEND_URL`.
 
 ---
 
-## 5. Health Checks
+## 5. Smoke Test After Deploy
 
-| Service | Endpoint | Description |
-| --- | --- | --- |
-| Backend | `/api/health` | Returns `{ status: "ok" }` when the API is running |
-| Frontend | `/` | Vercel static build |
-
-Configure Render's health check to use `/api/health` to make sure the service is considered healthy after deployment.
+1. `GET /api/health` returns `{ "status": "ok" }`.
+2. `GET /api/auth/ton-connect/challenge` returns the ton-proof payload and `POST /api/auth/ton-connect` returns `{ userId, accessToken, walletAddress }`.
+3. Walk through the Mining flow: view an ad, confirm `/api/ads/complete` responds with updated balance, and check `/api/stats` for new history entries.
+4. Claim a partner reward with `/api/rewards/claim` and verify it disappears from `/api/rewards/status`.
+5. Create a boost order (`/api/orders/create`), send a TON payment through TonConnect, and wait for the TonAPI webhook (or call `/api/orders/:id/confirm` with the transaction hash) to activate the boost.
 
 ---
 
-## 6. Economy Verification
+## 6. Troubleshooting Economy Issues
 
-If ad completions do not increase the user balance:
+If ad completions do not raise the balance:
 
-1. Run the backend locally (`npm run dev:backend`) once to execute `ensureDatabase()` (creates tables on Neon).
-2. In Neon, confirm that the following tables exist: `users`, `watch_logs`, `session_logs`, `reward_claims`, `orders`, `user_tokens`.
-3. Inspect recent watch logs to validate inserts:
+1. Ensure `ensureDatabase()` ran by starting the backend once.
+2. In Neon, confirm required tables exist: `users`, `watch_logs`, `session_logs`, `reward_claims`, `orders`, `user_tokens`.
+3. Inspect recent watch logs:
    ```sql
    SELECT created_at, reward, multiplier
    FROM watch_logs
@@ -115,12 +101,12 @@ If ad completions do not increase the user balance:
    ORDER BY created_at DESC
    LIMIT 20;
    ```
-4. If logs exist but energy stays unchanged, review Render logs for failed transactions or permission issues.
+4. If logs are present but energy is not increasing, check Render logs for errors or transaction rollbacks.
 
 ---
 
-### Next Steps
+## 7. Next Steps
 
-- Wire real TON payment verification into `backend/src/services/userService.ts`.
-- Add authentication hardening (rate limits, signature checks) before going live.
-- Schedule regular backups on Neon and monitor connection limits.
+- Wire TonAPI webhook (`/api/payments/ton/webhook`) in production and monitor settlements.
+- Harden authentication by validating Telegram `initData` and tightening confirmation rules for boosts.
+- Configure Neon backups and monitor connection usage as user counts rise.

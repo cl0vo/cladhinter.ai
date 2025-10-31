@@ -1,207 +1,133 @@
 # Cladhunter
 
-> Modern watch-to-earn experience for Telegram. React/Vite frontend deploys to Vercel, Express/Postgres backend runs on Render, data lives in Neon.
+Watch-to-earn mini app for Telegram. Users mine virtual `CL` energy by viewing partner ads, buy reward boosts with TON, and track their progress across Mining, Stats, and Wallet screens.
 
 ---
 
 ## Highlights
 
-- **Mining by watching ads** � configurable creatives (video/image) reward users with in-game energy.
-- **TON-powered boosts** � premium multipliers are purchased with TON; payments are validated through Tonapi or webhook callbacks.
-- **Partner campaigns** � flexible reward system for Telegram / X / YouTube communities.
-- **Wallet-bound sessions** � TonConnect proof links CL balances to a verified TON wallet.
-- **Shared configs** � ads / boosts / partners live in `shared/` and are reused on both layers.
----
-
-## Tech Stack
-
-| Layer     | Technologies                                  | Hosting |
-|-----------|-----------------------------------------------|---------|
-| Frontend  | React 18 · TypeScript · Vite · Tailwind · TonConnect UI | Vercel  |
-| Backend   | Node 18 · Express · Zod · pg · express-rate-limit | Render  |
-| Database  | Neon PostgreSQL                               | Neon    |
-| Shared    | TypeScript config modules                     | –       |
+- Mining loop delivers configurable video and banner ads; each completion rewards `CL` energy based on creative type.
+- Wallet-bound onboarding uses TonConnect ton-proof (`GET /api/auth/ton-connect/challenge` → `POST /api/auth/ton-connect`) to issue `{ userId, accessToken, walletAddress }`.
+- Stats screen aggregates lifetime earnings, daily usage, active multiplier, and the latest watch history so users can track performance.
+- Wallet integrates TonConnect for paid boosts; orders return encoded comment payloads and the server validates TON transfers before applying multipliers.
+- Partner campaigns grant one-off bonuses, while referral sharing and planned withdrawals pave the way for growth and monetisation.
 
 ---
 
-## Repository Layout
+## Architecture Overview
+
+| Layer    | Stack / Tools                                   | Hosting |
+|----------|--------------------------------------------------|---------|
+| Frontend | React 18, TypeScript, Vite, Tailwind, TonConnect | Vercel  |
+| Backend  | Node 18, Express, Zod, pg, express-rate-limit    | Render  |
+| Database | PostgreSQL                                       | Neon    |
+| Shared   | TypeScript configs (ads, economy, partners)      | Shared  |
+
+Repository layout:
 
 ```
 .
-├── backend/                 # Express API + Neon connector
-│   ├── src/config.ts        # env parsing (HTTP, DB, CORS, TON, rate-limit)
-│   ├── src/db.ts            # pg pool + schema migrations
-│   ├── src/routes.ts        # REST endpoints (/api/*)
-│   └── src/services/        # authService, userService, tonService, …
-├── frontend/                # Vite + React client (mobile-first)
-│   ├── App.tsx              # Mining / Stats / Wallet navigation shell
-│   ├── hooks/               # useAuth, useApi, useUserData, ...
-│   ├── components/          # UI blocks (shadcn-based)
-│   └── utils/api/client.ts  # backend request helper + base URL resolver
-├── shared/config/           # ads / economy / partners definitions
-└── docs/DEPLOYMENT.md       # Vercel + Render + Neon deployment guide
+|- backend/              # Express API, Ton integration, schema bootstrap
+|- frontend/             # Vite client with Mining / Stats / Wallet screens
+|- shared/config/        # Ads, economy, partner campaign definitions
+\- docs/                 # Deployment and product documentation
 ```
-
-Legacy Supabase/Deno logic has been removed.
 
 ---
 
-## Authentication Flow
+## Core Flow
 
-1. Frontend requests a challenge via `GET /api/auth/ton-connect/challenge` and feeds the payload into TonConnect `tonProof`.
-2. The connected wallet signs the payload and returns `ton_proof` together with its address, public key and `walletStateInit`.
-3. Frontend sends the proof to `POST /api/auth/ton-connect`; the backend verifies the signature, checks the allowed domain, derives the wallet address from `state_init`, and issues `{ userId, accessToken, walletAddress }`.
-4. Each subsequent request must send:
-   - `Authorization: Bearer <accessToken>`
-   - `X-User-ID: <userId>`
-5. Sessions are stored per wallet address; `useAuth()` refreshes the proof when the wallet reconnects.
+1. **Telegram launch**: The mini app opens in full-screen mode via the Telegram WebApp API. The client fetches a ton-proof challenge (`GET /api/auth/ton-connect/challenge`), forwards it to the connected wallet with TonConnect, and exchanges the signed proof via `POST /api/auth/ton-connect` to obtain `{ userId, accessToken, walletAddress }`.
+2. **Mining**: The Mining screen renders creatives from `shared/config/ads.ts`. Rewards per ad are pulled from `ENERGY_PER_AD` (examples: short video +10 CL, long video +25 CL, promo banner +50 CL). After a valid view the client posts `/api/ads/complete { ad_id }`; the backend enforces a 30 second cooldown and a 200 ad daily limit, updates `users.energy`, logs the event, and returns the new balance.
+3. **Stats**: `/api/stats` returns aggregates (total CL earned, watch counts, streak data, boost multiplier) plus the latest watch log entries so users see recent gains.
+4. **Wallet & boosts**: `POST /api/orders/create` sets up TON payments with an encoded comment payload. TonConnect sends the transaction; a TonAPI webhook (or a manual `/api/orders/:id/confirm` call with the transaction hash) finalises the order before the multiplier is applied.
+5. **Partner rewards**: Users claim bonuses with `/api/rewards/claim` using partner IDs from `shared/config/partners.ts`. The API prevents duplicate claims and logs the reward.
+6. **Referrals & withdrawals**: UI surfaces referral links (`https://cladhunter.app/ref/<userId>`) and a disabled Withdraw button. Backend implementation is pending; the roadmap covers referral tracking, anti-fraud, and future redemption mechanics.
 
 ---
 
 ## API Surface
 
-| Method | Endpoint                      | Description                                  |
-|--------|--------------------------------|----------------------------------------------|
-| GET    | `/api/auth/ton-connect/challenge` | Generate TonProof payload challenge        |
-| POST   | `/api/auth/ton-connect`        | Verify TonProof and issue wallet session     |
-| GET    | `/api/health`                  | Service health probe                         |
-| POST   | `/api/user/init`               | Initialise user session & counters           |
-| GET    | `/api/user/balance`            | Energy, boost level, multiplier              |
-| GET    | `/api/stats`                   | Mining statistics + watch history            |
-| POST   | `/api/ads/complete`            | Register ad view (cooldown + limits apply)   |
-| GET    | `/api/rewards/status`          | Claimed partner rewards                      |
-| POST   | `/api/rewards/claim`           | Claim partner reward                         |
-| POST   | `/api/orders/create`           | Create TON boost order                       |
-| POST   | `/api/orders/:id/confirm`      | Manual confirmation + Tonapi verification    |
-| POST   | `/api/payments/ton/webhook`    | Render-facing TON webhook (requires secret)  |
+| Method | Endpoint                            | Description                                        |
+|--------|-------------------------------------|----------------------------------------------------|
+| GET    | `/api/auth/ton-connect/challenge`   | Generate TonConnect ton-proof payload              |
+| POST   | `/api/auth/ton-connect`             | Verify ton-proof and issue wallet-bound session    |
+| GET    | `/api/health`                       | Health probe for uptime checks                     |
+| POST   | `/api/user/init`                    | Initialise counters and session log                |
+| GET    | `/api/user/balance`                 | Current balance, boost state, multiplier           |
+| GET    | `/api/stats`                        | Lifetime stats and recent watch history            |
+| POST   | `/api/ads/complete`                 | Register ad completion (cooldown and limits apply) |
+| GET    | `/api/rewards/status`               | List claimed partner rewards and remaining bonuses |
+| POST   | `/api/rewards/claim`                | Grant partner reward if eligible                   |
+| POST   | `/api/orders/create`                | Create TON boost order                             |
+| POST   | `/api/orders/:id/confirm`           | Manually confirm TON payment with a transaction hash |
+| POST   | `/api/payments/ton/webhook`         | TonAPI webhook for asynchronous settlement         |
 
-Response contracts are defined in `frontend/types/index.ts`.
+Response contracts are shared with the frontend under `frontend/types/`.
 
 ---
 
 ## Local Development
 
-> Requires Node.js 18+ and access to a Postgres database (Neon recommended).
+> Requires Node.js 18+ and access to a PostgreSQL instance (Neon recommended).
 
 ```bash
-# install deps (workspace aware)
-npm install
+npm install                                # install workspace dependencies
+cp backend/.env.example backend/.env       # configure DATABASE_URL, TON keys, etc.
+cp frontend/.env.example frontend/.env     # optional VITE_BACKEND_URL override
 
-# configure environment
-cp backend/.env.example backend/.env      # fill DATABASE_URL, TON vars, etc.
-cp frontend/.env.example frontend/.env    # optional: override VITE_BACKEND_URL
-
-# start services
-npm run dev:backend   # http://localhost:4000
-npm run dev:frontend  # http://localhost:5173
+npm run dev:backend                        # start Express API on http://localhost:4000
+npm run dev:frontend                       # start Vite dev server on http://localhost:5173
 ```
 
-When `VITE_BACKEND_URL` is omitted the client auto-targets `http://localhost:4000/api`.
+The client defaults to `http://localhost:4000/api` when `VITE_BACKEND_URL` is not set.
 
 ---
 
-## Environment Variables
+## Key Environment Variables
 
-| Variable | Default / Example | Purpose |
-|----------|-------------------|---------|
-| `DATABASE_URL` | *(required)* | Neon/Postgres connection string (`sslmode=require`) |
-| `HOST` / `PORT` | `0.0.0.0` / `4000` | API bind settings (Render overrides port) |
-| `CORS_ALLOWED_ORIGINS` | `*` | Comma separated allow-list |
-| `MERCHANT_WALLET` | `UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ` | Merchant TON wallet |
-| `API_RATE_LIMIT_WINDOW_MS` | `60000` | Rate-limit window per IP (ms) |
-| `API_RATE_LIMIT_MAX` | `120` | Requests allowed per window |
-| `TON_API_BASE_URL` | `https://tonapi.io` | Tonapi host |
-| `TON_API_KEY` | *(optional)* | Tonapi bearer token (recommended) |
-| `TON_WEBHOOK_SECRET` | *(optional)* | Shared secret expected by webhook |
-| `TON_PROOF_ALLOWED_DOMAINS` | `localhost:5173,cladhunter-ai-frontend.vercel.app` | Domains accepted inside TonProof payload |
-| `TON_PROOF_TTL_SECONDS` | `900` | Max age for TonProof timestamp |
-| `VITE_BACKEND_URL` *(frontend)* | *(optional)* | Static API base during build/runtime |
+### backend/.env
 
-Use the templates in `backend/.env.example` and `frontend/.env.example`.
+- `DATABASE_URL` - Neon connection string (`sslmode=require`).
+- `HOST` / `PORT` - binding options (Render overrides port in production).
+- `CORS_ALLOWED_ORIGINS` - comma separated allow list for the API.
+- `MERCHANT_WALLET` - TON wallet that receives boost payments.
+- `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` - per-IP throttling guardrails.
+- `TON_API_BASE_URL`, `TON_API_KEY` - TonAPI configuration for payment verification.
+- `TON_WEBHOOK_SECRET` - header token required on webhook requests.
 
----
+### frontend/.env
 
-## Deployment (Vercel + Render + Neon)
+- `VITE_BACKEND_URL` - explicit API base (Render URL) if auto detection is not desired.
 
-1. **Neon** – create database, copy pooled `DATABASE_URL` (with `sslmode=require`).
-2. **Render** – Web Service (Node):
-   - Build: `npm install && npm run build:backend`
-   - Start: `npm run start:backend`
-   - Set env vars listed above
-   - Health-check: `/api/health`
-3. **Vercel** – Project:
-   - Build: `npm run build:frontend` (defaults to repo `vercel.json`)
-   - Output: `frontend/dist` (auto-detected via `frontend/vercel.json`)
-   - Env: `VITE_BACKEND_URL=https://<render-service>.onrender.com`
-4. Smoke test after deploy: `/api/health`, `/api/auth/ton-connect`, mining flow, reward claim, TON webhook.
-
-Detailed walkthrough → [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+Restart the relevant dev server when environment values change.
 
 ---
 
-## Roadmap / Next Steps
+## Deployment Basics
 
-- Finalise TON payment automation with dedicated webhook source (Tonapi / toncenter).
-- Harden authentication by signing Telegram `initData`.
-- Integrate production ad network + analytics dashboard.
-- Build admin console for creatives, boosts, partners.
+1. **Database**: Provision Neon, copy the pooled `DATABASE_URL`, and ensure `sslmode=require`.
+2. **Backend (Render)**:
+   - Build command: `npm install && npm run build:backend`
+   - Start command: `npm run start:backend`
+   - Set environment variables listed above
+   - Health check path: `/api/health`
+3. **Frontend (Vercel)**:
+   - Build command: `npm run build:frontend`
+   - Output directory: `frontend/dist`
+   - Environment: `VITE_BACKEND_URL=https://<render-service>.onrender.com`
+4. **Smoke test**: hit `/api/health` and `/api/auth/ton-connect/challenge`, walk through Mining (ad complete, stats update), claim a partner reward, send a TON payment for a boost, and ensure the webhook (or manual `/api/orders/:id/confirm` with a transaction hash) activates the boost.
 
----
-
-## Current Status
-
-- ✅ Monorepo refactor (Vercel + Render + Neon)
-- ✅ Anonymous session tokens & global rate limiting
-- ✅ Tonapi verification + webhook handler for TON payments
-- ✅ Shared config, cleaned documentation
-- ✅ Frontend build & stats/mining flow verified on Vercel
-- ⚠️ Economy accrual (`CL` rewards) under investigation — watch logs + balance update path under review
-- ⚠️ Monitoring + webhook hardening still require production wiring
-
-Ready for deployment following the steps above. Ping the team before starting a roadmap item or adjusting shared configs.
+Detailed steps live in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
 
-## Economy Troubleshooting
+## Current Risks and Gaps
 
-> Use this when ad views are processed but balances stay unchanged.
+- **Identity**: Anonymous sessions create a new account per device. Binding Telegram `initData` (and optionally Ton wallet) is required to merge profiles and prevent multi-account abuse.
+- **Payments**: Boost activation now requires a verified TON transaction hash. Wire the TonAPI webhook in production so boosts settle automatically and users rarely need manual confirmation.
+- **Economy & UX**: Onboarding, localisation (RU/EN), friendly error copy, and inactive Withdraw button adjustments are needed ahead of launch.
+- **Analytics**: No instrumentation yet. Add GA/Amplitude/PostHog (or similar) to track activation, retention, and monetisation metrics.
+- **Referrals and withdrawals**: UI promises functionality that the backend does not yet implement. Prioritise referral tracking, caps, and payout design.
 
-1. **Ensure migrations ran**: `npm run dev:backend` will call `ensureDatabase()` and create the required tables if they are missing.
-2. **Verify schema in Neon** – the economy flow expects these tables:
-   - `users` (energy, boost_level, totals, timestamps)
-   - `watch_logs` (per-ad reward history)
-   - `session_logs`
-   - `reward_claims`
-   - `orders`
-   - `user_tokens`
-3. **Manual check** – run:
-   ```sql
-   SELECT table_name FROM information_schema.tables
-   WHERE table_schema = 'public'
-     AND table_name IN ('users','watch_logs','session_logs','reward_claims','orders','user_tokens');
-   ```
-   Missing tables mean the backend couldn’t bootstrap the schema.
-4. **Inspect watch logs** – confirm ad completions are being recorded:
-   ```sql
-   SELECT created_at, reward, multiplier
-   FROM watch_logs
-   WHERE user_id = '<user-id>'
-   ORDER BY created_at DESC
-   LIMIT 20;
-   ```
-   If entries appear here but `users.energy` stays flat, check for failed transactions/rollbacks in Render logs.
-5. **Claim rewards** – ensure boosts and partner rewards update the balance:
-   ```sql
-   SELECT reward, partner_name, claimed_at
-   FROM reward_claims
-   WHERE user_id = '<user-id>'
-   ORDER BY created_at DESC;
-   ```
-   No rows indicate the claim path did not persist; inspect API logs for `reward already claimed` or transaction failures.
-
-
-
-
-
-
-
+See [`docs/PRODUCT_ANALYSIS.md`](docs/PRODUCT_ANALYSIS.md) for a full product audit, phased roadmap, and execution plan.
