@@ -1,7 +1,7 @@
 import React, { Component, ReactNode } from 'react';
 import { GlassCard } from './GlassCard';
 import { AlertTriangle } from 'lucide-react';
-import { Button } from './ui/button';
+import { Button } from './Button';
 
 interface Props {
   children: ReactNode;

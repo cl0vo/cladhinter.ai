@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GlassCard } from './GlassCard';
-import { Button } from './ui/button';
+import { Button } from './Button';
 import { TonConnectButton } from './TonConnectButton';
 import { Copy, Share2, Zap, TrendingUp, Shield, ArrowDownToLine, ArrowUpFromLine, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import { useTonConnect } from '../hooks/useTonConnect';
 import { BOOSTS } from '@shared/config/economy';
 import type { CurrencyCode } from '@shared/config/currency';
 import { formatCl, formatTon } from '../utils/helpers';
+import { captureEvent } from '../utils/analytics';
 
 interface OrderResponse {
   order_id: string;
@@ -72,6 +73,7 @@ export function WalletScreen() {
     const referralLink = `https://cladhunter.app/ref/${user?.id}`;
     navigator.clipboard.writeText(referralLink);
     toast.success('Referral link copied!');
+    captureEvent('referral_share', { referral_url: referralLink });
   };
 
   const handleBuyBoost = async (boostLevel: number) => {
@@ -100,6 +102,12 @@ export function WalletScreen() {
       if (orderData) {
         setPendingOrder(orderData);
         setMerchantAddress(orderData.address);
+        captureEvent('boost_order_created', {
+          order_id: orderData.order_id,
+          boost_level: boostLevel,
+          ton_amount: orderData.amount,
+          cl_equivalent: orderData.amount_cl,
+        });
 
         setIsSendingTx(true);
         try {
@@ -113,9 +121,18 @@ export function WalletScreen() {
 
           toast.success('Transaction sent! Waiting for TON confirmation.');
           toast.info('Boost will activate after the payment is confirmed on-chain.');
+          captureEvent('boost_payment_initiated', {
+            order_id: orderData.order_id,
+            boost_level: boostLevel,
+            ton_amount: orderData.amount,
+          });
         } catch (txError) {
           console.error('Transaction error:', txError);
           toast.error('Transaction failed. Please try again.');
+          captureEvent('boost_payment_failed', {
+            order_id: orderData.order_id,
+            boost_level: boostLevel,
+          });
         } finally {
           setIsSendingTx(false);
         }
@@ -152,12 +169,21 @@ export function WalletScreen() {
 
       if (result) {
         toast.success(`${pendingOrder.boost_name} boost activated! x${result.multiplier} multiplier`);
+        captureEvent('boost_paid', {
+          order_id: pendingOrder.order_id,
+          boost_level: result.boost_level,
+          multiplier: result.multiplier,
+          tx_hash: trimmedHash,
+        });
         setPendingOrder(null);
         await refreshBalance();
       }
     } catch (error) {
       console.error('Manual confirmation error:', error);
       toast.error('Payment has not been confirmed on-chain yet. Please try again in a moment.');
+      captureEvent('boost_payment_confirmation_failed', {
+        order_id: pendingOrder.order_id,
+      });
     }
   };
 

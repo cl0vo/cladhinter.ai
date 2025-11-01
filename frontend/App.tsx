@@ -3,11 +3,12 @@ import { MiningScreen } from './components/MiningScreen';
 import { StatsScreen } from './components/StatsScreen';
 import { WalletScreen } from './components/WalletScreen';
 import { BottomNav } from './components/BottomNav';
-import { Toaster } from './components/ui/sonner';
+import { Toaster } from './components/Toaster';
 import { LoadingAnimation } from './components/LoadingAnimation';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAuth } from './hooks/useAuth';
 import { UserDataProvider } from './hooks/useUserData';
+import { initAnalytics } from './utils/analytics';
 import { initTelegramWebApp } from './utils/telegram';
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
   // Initialize Telegram Web App on mount
   useEffect(() => {
     initTelegramWebApp();
+    initAnalytics();
   }, []);
 
   const handleNavigate = (screen: 'mining' | 'stats' | 'wallet') => {

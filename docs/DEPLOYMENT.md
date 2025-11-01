@@ -1,111 +1,127 @@
-# Deployment Guide (Vercel + Render + Neon)
+# Deployment Playbook (Render + Vercel + Neon)
 
-Cladhunter runs as a small monorepo: Vite frontend, Express backend, shared TypeScript configs, and a Neon PostgreSQL database. This guide covers the minimum configuration needed to launch the stack.
-
----
-## 1. Prepare the Database (Neon)
-
-1. Create a Neon project and database.
-2. Copy the pooled connection string and append `sslmode=require`.
-3. Run the backend locally (`npm run dev:backend`) to execute schema bootstrap, or let Render do the first-time migration.
-
-Key backend environment variables:
-
-| Variable | Example | Notes |
-|----------|---------|-------|
-| `DATABASE_URL` | `postgres://user:pass@...neon.tech/neondb?sslmode=require` | Required pooled connection |
-| `MERCHANT_WALLET` | `UQ...` | TON wallet that receives boost payments |
-| `CORS_ALLOWED_ORIGINS` | `https://cladhunter.vercel.app` | Comma separated list; use `*` only for testing |
-| `HOST` / `PORT` | `0.0.0.0` / `4000` | Render overrides port |
-| `API_RATE_LIMIT_WINDOW_MS` | `60000` | Optional per-IP window (ms) |
-| `API_RATE_LIMIT_MAX` | `120` | Optional max requests per window |
-| `TON_API_BASE_URL` | `https://tonapi.io` | TonAPI base URL |
-| `TON_API_KEY` | `tonapi_...` | TonAPI bearer token (recommended) |
-| `TON_WEBHOOK_SECRET` | `super-secret` | Shared secret expected on webhook |
-
-Keep the connection string handy for Render configuration.
+Пошаговый гайд для выката CladHunter на домен `https://cladhunter.app`. Используйте его вместе с `audit.md` (фазы 1, 6, 7) и `README.md` → «Deployment Basics». Каждый блок снабжён чеклистом — переносите результаты в release log.
 
 ---
 
-## 2. Backend API (Render)
+## 0. Pre-flight Checklist
 
-1. Create a **Web Service** on Render and point it at the repository root.
-2. Environment: `Node`.
-3. Build command: `npm install && npm run build:backend`.
-4. Start command: `npm run start:backend`.
-5. Add the environment variables listed above.
-6. Set health check path to `/api/health`.
+- [ ] Обновлены зависимости (`npm install --workspaces`).
+- [ ] `backend/.env` и `frontend/.env` заполнены актуальными значениями.
+- [ ] Neon база доступна, выполнена инициализация схемы.
+- [ ] Render и Vercel проекты готовы к деплою (указаны переменные окружения).
+- [ ] Подготовлен smoke test план (см. раздел 4).
 
-Render will expose a URL such as `https://cladhunter-api.onrender.com`. Set this as `VITE_BACKEND_URL` when building for Vercel so the public frontend can reach the API.
+---
 
-Sessions are wallet-bound. The frontend retrieves a TonConnect challenge (`GET /api/auth/ton-connect/challenge`), exchanges the signed proof via `POST /api/auth/ton-connect`, and reuses the returned `{ userId, accessToken, walletAddress }`. Boost purchases create orders, send TON with the encoded comment payload, and settle once TonAPI confirms the transaction (via webhook or a manual `/api/orders/:id/confirm` with the transaction hash).
+## 1. Database (Neon)
+
+1. Создайте project + database в Neon, включите pooled connection.
+2. Скопируйте строку подключения и добавьте `sslmode=require`.
+3. Заполните `backend/.env`:
+   ```env
+   DATABASE_URL=postgres://...neon.tech/neondb?sslmode=require
+   ```
+4. Запустите backend локально (`npm run dev:backend`) для автоматического bootstrap схемы или выполните миграции вручную, если появятся.
+5. Проверьте наличие таблиц: `users`, `user_tokens`, `watch_logs`, `reward_claims`, `orders`, `session_logs`.
+6. Настройте автоматические бэкапы и read-only доступ при необходимости.
+
+---
+
+## 2. Backend (Render Web Service)
+
+| Настройка | Значение |
+|-----------|----------|
+| Environment | Node |
+| Build command | `npm install && npm run build:backend` |
+| Start command | `npm run start:backend` |
+| Health check | `/api/health` |
+
+### Переменные окружения
+
+- `DATABASE_URL`
+- `CORS_ALLOWED_ORIGINS` (например, `https://cladhunter.app,https://cladhunter.vercel.app`)
+- `MERCHANT_WALLET`
+- `TON_API_BASE_URL`, `TON_API_KEY`
+- `TON_WEBHOOK_SECRET`
+- `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` (по необходимости)
+
+### Чеклист
+
+- [ ] Первый билд прошёл успешно, сервис получил публичный URL (`https://cladhunter-api.onrender.com`).
+- [ ] Логи подтверждают, что `ensureDatabase()` или миграции выполнены.
+- [ ] Webhook TonAPI зарегистрирован и указывает на `/api/payments/ton/webhook`.
+- [ ] Проверены ручки `GET /api/health` и `GET /api/auth/ton-connect/challenge` из публичного интернета.
+- [ ] Создана запись в release log о версии backend.
 
 ---
 
 ## 3. Frontend (Vercel)
 
-1. Import the repository into Vercel as a project.
-2. Build command: `npm run build:frontend`.
-3. Output directory: `frontend/dist`.
-4. Environment variables:
+| Настройка | Значение |
+|-----------|----------|
+| Build command | `npm run build:frontend` |
+| Output directory | `frontend/dist` |
+| Default domain | `https://cladhunter.vercel.app` (или кастомный CNAME) |
 
-| Variable | Value |
-|----------|-------|
-| `VITE_BACKEND_URL` | `https://cladhunter-api.onrender.com` |
+### Переменные окружения
 
-Redeploy. Vercel injects `VITE_BACKEND_URL` into the static build so the client targets the Render API while running on the public Vercel domain (for example `https://cladhunter.vercel.app`). Only override this value in `frontend/.env` when you are debugging locally.
+- `VITE_BACKEND_URL=https://cladhunter-api.onrender.com` (или ваш Render URL)
 
----
+### Чеклист
 
-## 4. Local Debugging Checklist (optional)
-
-```bash
-# install dependencies
-npm install
-
-# backend terminal
-cp backend/.env.example backend/.env
-npm run dev:backend
-
-# frontend terminal
-cp frontend/.env.example frontend/.env
-npm run dev:frontend
-```
-
-The backend listens on `http://localhost:4000`; the frontend defaults to calling `http://localhost:4000/api` only for this debug mode. Production builds must supply the Render URL via `VITE_BACKEND_URL`.
+- [ ] Указан workspace root при импорте репозитория (корень проекта).
+- [ ] Успешно прошёл build preview.
+- [ ] Проверено, что `VITE_BACKEND_URL` в build logs совпадает с актуальным Render URL.
+- [ ] Custom домен `cladhunter.app` привязан и указывает на Vercel.
+- [ ] Выполнены smoke тесты (раздел 4) на `https://cladhunter.app`.
 
 ---
 
-## 5. Smoke Test After Deploy
+## 4. Smoke Test Script
 
-1. `GET /api/health` returns `{ "status": "ok" }`.
-2. `GET /api/auth/ton-connect/challenge` returns the ton-proof payload and `POST /api/auth/ton-connect` returns `{ userId, accessToken, walletAddress }`.
-3. Walk through the Mining flow: view an ad, confirm `/api/ads/complete` responds with updated balance, and check `/api/stats` for new history entries.
-4. Claim a partner reward with `/api/rewards/claim` and verify it disappears from `/api/rewards/status`.
-5. Create a boost order (`/api/orders/create`), send a TON payment through TonConnect, and wait for the TonAPI webhook (or call `/api/orders/:id/confirm` with the transaction hash) to activate the boost.
+Прогоните после каждого релиза frontend/backend. Результаты фиксируйте в release log, ссылку на запись добавляйте в `audit.md` (Фаза 7).
 
----
-
-## 6. Troubleshooting Economy Issues
-
-If ad completions do not raise the balance:
-
-1. Ensure `ensureDatabase()` ran by starting the backend once.
-2. In Neon, confirm required tables exist: `users`, `watch_logs`, `session_logs`, `reward_claims`, `orders`, `user_tokens`.
-3. Inspect recent watch logs:
-   ```sql
-   SELECT created_at, reward, multiplier
-   FROM watch_logs
-   WHERE user_id = '<user-id>'
-   ORDER BY created_at DESC
-   LIMIT 20;
-   ```
-4. If logs are present but energy is not increasing, check Render logs for errors or transaction rollbacks.
+1. `GET https://cladhunter-api.onrender.com/api/health` → `{ "status": "ok" }`.
+2. TonConnect flow:
+   - `GET /api/auth/ton-connect/challenge`
+   - `POST /api/auth/ton-connect` (убедитесь, что backend и БД сохраняют `userId`, `walletAddress`, `accessToken`).
+3. Mining:
+   - Зайти на `https://cladhunter.app`, стартовать майнинг, дождаться завершения рекламы.
+   - Проверить ответ `/api/ads/complete` (баланс обновился, cooldown работает).
+4. Stats: обновление `/api/stats` показывает новую запись.
+5. Partner Reward: `POST /api/rewards/claim`, проверить, что ID пропал из `/api/rewards/status`.
+6. Boost:
+   - `POST /api/orders/create`, получить comment payload.
+   - Отправить TON (можно тестовой транзакцией), подтвердить через webhook или `POST /api/orders/:id/confirm`.
+   - Проверить, что `/api/user/balance` отражает активный boost.
+7. UI: убедиться, что Wallet отображает кошелёк, Stats — свежие данные, Withdraw помечен как WIP.
 
 ---
 
-## 7. Next Steps
+## 5. Troubleshooting
 
-- Wire TonAPI webhook (`/api/payments/ton/webhook`) in production and monitor settlements.
-- Harden authentication by validating Telegram `initData` and tightening confirmation rules for boosts.
-- Configure Neon backups and monitor connection usage as user counts rise.
+| Симптом | Действия |
+|---------|----------|
+| `POST /api/auth/ton-connect` зависает | Проверить Render logs, доступность Neon, наличие `TON_API_BASE_URL`. |
+| Баланс не увеличивается | Убедиться, что `watch_logs` получает записи, кулдаун не блокирует, транзакция коммитится. |
+| Webhook не приходит | Проверьте регистрацию на стороне TonAPI, заголовок `X-TON-WEBHOOK-SECRET`, сетевые логи Render. |
+| Vercel обращается к старому API | Очистить `VITE_BACKEND_URL` в настройках, триггернуть rebuild. |
+| Telegram WebApp не открывает `https://cladhunter.app` | Убедиться, что домен добавлен в `allowed_origins`, настроен HTTPS и корректный CNAME. |
+
+---
+
+## 6. Post-release Care
+
+- [ ] Мониторинг `/api/health` и ключевых метрик добавлен в UptimeRobot/BetterStack.
+- [ ] Сняты показатели (кол-во авторизаций, успешных майнингов, бустов) за первые 24 часа.
+- [ ] Подготовлен ретроспективный отчёт (что починено, что осталось).
+- [ ] Обновлены `audit.md` (чекбоксы фаз 6–7) и `README.md` (Changelog).
+- [ ] Партнёры, маркетинг и команда уведомлены о статусе деплоя.
+
+---
+
+## История изменений
+
+- 2025-10-31 — документ переработан в пошаговый playbook с чеклистами и smoke тестом.
+

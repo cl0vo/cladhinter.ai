@@ -1,251 +1,100 @@
 # Cladhunter Engineer Handbook (October 2025)
 
-This handbook keeps the team aligned on architecture, code conventions, product flow, and launch priorities. Read it end-to-end before shipping changes.
+Рабочий плейбук для инженеров CladHunter. Читайте вместе с `audit.md` (операционные чеклисты), `README.md` (архитектура и запуск) и `docs/PRODUCT_ANALYSIS.md` (продуктовая перспектива).
 
 ---
 
-## 1. Architecture Snapshot
+## 1. Архитектура & репозиторий
 
 | Layer    | Stack / Tooling                                   | Hosting |
 |----------|---------------------------------------------------|---------|
 | Frontend | React 18, TypeScript, Vite, Tailwind, TonConnect  | Vercel  |
 | Backend  | Node 18, Express, Zod, pg, express-rate-limit     | Render  |
 | Database | PostgreSQL (Neon)                                 | Neon    |
-| Shared   | TypeScript configs for ads, economy, partners     | Shared  |
-
-Core truths:
-
-- Sessions are wallet-bound: the client fetches a TonConnect challenge (`GET /api/auth/ton-connect/challenge`), signs it in the wallet, and exchanges it via `POST /api/auth/ton-connect` to obtain `{ userId, accessToken, walletAddress }` for all subsequent API calls.
-- Ads, boost tiers, and partner campaigns are defined once in `shared/config` and consumed by both frontend and backend.
-- Payments for boosts rely on TonConnect. Orders are created on our backend, paid in the user wallet, then confirmed by TonAPI or webhook callbacks.
-
----
-
-## 2. Repository Layout
+| Shared   | TypeScript configs (ads, economy, partners)       | Shared  |
 
 ```
 .
-|--- backend/
-|   |--- src/config.ts           # HTTP, DB, CORS, rate limiting, TON config
-|   |--- src/db.ts               # pg pool, schema bootstrap
-|   |--- src/routes.ts           # REST routes mounted under /api
-|   \--- src/services/           # authService, userService, tonService, etc.
-|--- frontend/
-|   |--- App.tsx                 # Bottom navigation, Mining / Stats / Wallet
-|   |--- hooks/                  # useAuth, useApi, useUserData, useTonConnect
-|   |--- components/             # UI primitives and domain widgets
-|   \--- utils/api/client.ts     # API client with auth header wiring
-|--- shared/config/              # Ads, economy, partner campaign definitions
-\--- docs/                       # Deployment guide, product analysis, research
+|--- backend/             # Express API, Ton integrations, services
+|--- frontend/            # Vite + React mini-app (Mining, Stats, Wallet)
+|--- shared/config/       # Ads, economy, partner campaign definitions
+\--- docs/                # Deployment, product, research
 ```
 
-Legacy Supabase or Deno code has been removed. Do not reintroduce it.
+Основной поток: фронт запрашивает тон-пруф (`GET /api/auth/ton-connect/challenge`), кошелёк подписывает, backend проверяет (`POST /api/auth/ton-connect`), далее клиенты обращаются к API с `{ userId, accessToken, walletAddress }`.
 
 ---
 
-## 3. Build & Run Modes
+## 2. Рабочий цикл
 
-### Production (Vercel)
-
-Ship builds against the Vercel-hosted frontend. Before running `npm run build:frontend`, set `VITE_BACKEND_URL` to the live Render API so the bundle points at the public backend (for example `https://cladhunter-api.onrender.com`). Deploy `frontend/dist` to Vercel—traffic hits `https://cladhunter.vercel.app` or your custom domain.
-
-```bash
-npm install
-VITE_BACKEND_URL=https://cladhunter-api.onrender.com npm run build:frontend
-```
-
-### Local debugging
-
-```bash
-npm install                                # install workspace dependencies
-cp backend/.env.example backend/.env       # configure DATABASE_URL, TON keys, etc.
-cp frontend/.env.example frontend/.env     # optional VITE_BACKEND_URL override
-
-npm run dev:backend                        # Express API on http://localhost:4000
-npm run dev:frontend                       # Vite dev server on http://localhost:5173
-```
-
-Local debugging may omit `VITE_BACKEND_URL`, in which case the client falls back to `http://localhost:4000/api`. Production builds must always provide the Render URL.
-
-To run both services together use two terminals or a process manager (for example `npm run dev --workspaces` once scripts exist).
+1. В начале недели обновите `audit.md` (Фаза 0) и проверьте блокеры.
+2. На каждую задачу создавайте заметку с чеклистом → после завершения отмечайте пункт в `audit.md`, добавляйте ссылку на PR/тикет.
+3. Изменения архитектуры/флоу фиксируйте сразу в `README.md` и профильных документах (`docs/DEPLOYMENT.md`, `docs/PRODUCT_ANALYSIS.md`). Док неактуален → команда путается.
+4. Перед марджем: локально гоните тесты, ESLint/TypeScript, затем smoke-тест из `docs/DEPLOYMENT.md` при деплое.
+5. Релиз описывайте в release log + обновляйте раздел «Changelog» соответствующих файлов.
 
 ---
 
-## 4. Environment Variables
+## 3. Backend (Express API)
 
-### backend/.env
-
-- `DATABASE_URL` - Neon connection string (`sslmode=require`).
-- `HOST` / `PORT` - bind options (Render overrides port in production).
-- `CORS_ALLOWED_ORIGINS` - comma separated list for allowed origins.
-- `MERCHANT_WALLET` - TON wallet that receives boost payments.
-- `API_RATE_LIMIT_WINDOW_MS` / `API_RATE_LIMIT_MAX` - global rate limiting per IP.
-- `TON_API_BASE_URL` / `TON_API_KEY` - TonAPI endpoint and token for payment checks.
-- `TON_WEBHOOK_SECRET` - expected header for webhook verification.
-
-### frontend/.env
-
-- `VITE_BACKEND_URL` - explicit API base (Render URL).
-
-Restart the relevant dev server each time you change `.env`.
+- Входные данные валидируются Zod схемами перед бизнес-логикой.
+- Сервисы (`backend/src/services`) не должны «знать» о HTTP. Возвраты — в виде структурированных объектов/ошибок.
+- Логируйте ключевые события (`auth`, `ads/complete`, `orders`) через единый helper, добавляйте `userId`, `walletAddress`, `requestId`.
+- Транзакции с pg используйте для операций, которые изменяют больше одной таблицы (например, начисление энергии + лог).
+- Ошибки всегда мапьте в код + сообщение для клиента (RU/EN). Сырые текстовые ошибки запрещены.
+- Набор эндпоинтов закреплён в `README.md` → изменения синхронизируйте с фронтом и документацией.
 
 ---
 
-## 5. API Reference (server truth)
+## 4. Frontend (Vite + React)
 
-1. `GET /api/auth/ton-connect/challenge` -> `{ payload }`
-2. `POST /api/auth/ton-connect` -> `{ userId, accessToken, walletAddress }`
-3. Clients send `Authorization: Bearer <token>` and `X-User-ID: <userId>` with every subsequent request. Wallet bindings are enforced via the returned `walletAddress`.
-4. Rate limiting defaults to 120 requests per IP per minute (see config).
-
-| Method | Route                            | Purpose                                               |
-|--------|----------------------------------|-------------------------------------------------------|
-| GET    | `/api/auth/ton-connect/challenge`| Issue TonConnect ton-proof payload                    |
-| POST   | `/api/auth/ton-connect`          | Verify proof and issue wallet session                 |
-| GET    | `/api/health`                    | Render health probe                                   |
-| POST   | `/api/user/init`                 | Initialise counters, session log                      |
-| GET    | `/api/user/balance`              | Energy, boost level, multiplier, cooldown state       |
-| GET    | `/api/stats`                     | Totals plus latest watch logs                         |
-| POST   | `/api/ads/complete`              | Register ad completion (cooldown + daily limit)       |
-| GET    | `/api/rewards/status`            | Claimed partner rewards and pending opportunities     |
-| POST   | `/api/rewards/claim`             | Grant partner reward (one-off per partner)            |
-| POST   | `/api/orders/create`             | Create TON boost order with encoded comment payload   |
-| POST   | `/api/orders/:id/confirm`        | Manually confirm TON transfer using a transaction hash |
-| POST   | `/api/payments/ton/webhook`      | Webhook for asynchronous TON payment confirmation     |
-
-Refer to `frontend/types/` when adjusting response contracts.
+- `useAuth` отвечает за хранение `{ userId, accessToken, walletAddress }`. Любая работа с API должна идти через клиент, который подтягивает эти значения в заголовки.
+- `MiningScreen` и `Stats` обязаны обрабатывать состояния ошибок/таймаутов с дружелюбными сообщениями. При обновлении экономики обновляйте `shared/config/ads.ts` и UI одновременно.
+- Интеграция TonConnect: держите `tonProof` актуальным, отслеживайте disconnect (нужно очищать токены и баланс).
+- Стейт по бустам и наградам синхронизируйте с backend ответами, не полагайтесь на локальные вычисления.
+- Все пользовательские тексты должны жить в ресурсе/словаре (готовим RU/EN локализацию).
 
 ---
 
-## 6. Frontend Conventions
+## 5. Тестирование и качество
 
-- `useAuth` owns session lifecycle (localStorage persistence, header injection, revalidation).
-- All HTTP calls go through `useApi` / `apiRequest` to ensure headers and error handling are consistent.
-- UI primitives live under `frontend/components/ui/`. Keep naming and exports aligned with existing patterns.
-- Styling uses Tailwind with a dark neon theme. Keep layouts mobile-first and respect safe areas.
-- Toasts use `sonner`; icons come from `lucide-react`.
-- When adding strings, keep them centralised for upcoming localisation (RU/EN).
+- Planned stack: Vitest (frontend), Jest + supertest (backend). До внедрения минимум — ручная проверка по smoke-тест чеклисту из `docs/DEPLOYMENT.md`.
+- Любой баг → добавьте regression task в `audit.md` (Фаза 7) и выделите тест-кейс.
+- Линтеры (`eslint`, `tsc --project`) запускайте локально перед PR.
+- При сложных изменениях пишите «техническую заметку» в PR описании: что меняется, как проверить.
 
 ---
 
-## 7. Backend Conventions
+## 6. Наблюдаемость и тревоги
 
-- Validate request payloads with Zod in the route layer.
-- Use `db.ts` helpers (`query`, `withTransaction`) for database access. Transactions are mandatory for multi-step mutations (ad completion, payments, rewards).
-- Schema migrations currently live in `runSchemaMigrations`. Until a formal tool lands, keep changes idempotent and backward compatible.
-- Ton payments must be checked through `tonService`. Never mark an order paid without verification.
-- Return errors as `{ error: "message" }` with appropriate HTTP status codes.
-
----
-
-## 8. Shared Config Rules
-
-- `shared/config/ads.ts` - list of creatives, metadata, reward tiers.
-- `shared/config/economy.ts` - energy per ad type, cooldown, daily limits, boost tiers.
-- `shared/config/partners.ts` - partner reward definitions (`id`, `name`, `reward`, `active`).
-
-Any change must remain compatible with both frontend and backend. When fields change, update types and runtime validation on both sides.
+- Render logs: первая точка диагностики для backend. Включайте `DEBUG` режим при отладке (без логирования чувствительных данных).
+- Neon: проверяйте состояние через консоль или `SELECT count(*)` по таблицам. Log запросы для тонких багов.
+- Мониторинг: `/api/health` + собственные метрики (`ads/complete`, `orders/confirmed`). Алерты на внезапный рост/падение.
+- Сторонние сервисы: TonAPI webhook (проверяйте подпись), TonConnect SDK (обновляйте при мажорных релизах).
 
 ---
 
-## 9. Testing and QA
+## 7. Известные задачи (актуально 2025-10-31)
 
-Automated tests are not yet in place. Run this manual smoke checklist before merging:
+- Расследовать TonConnect привязку (кошелёк не сохраняется). Подробности — `audit.md` → блокер.
+- Внедрить webhook TonAPI в проде.
+- Подготовить onboarding и RU/EN локализацию UI.
+- Выбрать и внедрить analytics SDK (см. `docs/PRODUCT_ANALYSIS.md` → раздел 4).
+- Собрать launch kit (Landing, Telegram канал, partner deck).
 
-1. Start `npm run dev:backend` and `npm run dev:frontend`.
-2. Load the app in Telegram web preview or browser; confirm the TonConnect handshake (`/api/auth/ton-connect/challenge` + `/api/auth/ton-connect`) succeeds.
-3. Complete ad views until cooldown triggers; validate balance increases and limit messaging.
-4. Claim at least one partner reward and confirm it is locked out afterward.
-5. Create a boost order. Simulate payment confirmation by calling `/api/orders/:id/confirm` with a TonAPI-verified `tx_hash` or by posting to the webhook with the shared secret.
-6. Review `GET /api/stats` to verify watch log entries align with recent activity.
-
-Log issues in the project channel before merging significant changes.
+Эти пункты должны отражаться в таск-трекере и чеклистах.
 
 ---
 
-## 10. Deployment Checklist (Vercel + Render + Neon)
+## 8. Коммуникации
 
-1. **Neon**
-   - Provision database.
-   - Copy pooled `DATABASE_URL` with `sslmode=require`.
-2. **Render**
-   - Build: `npm install && npm run build:backend`
-   - Start: `npm run start:backend`
-   - Set backend environment variables (see Section 4).
-   - Configure health check `/api/health`.
-3. **Vercel**
-   - Build: `npm run build:frontend`
-  - Output: `frontend/dist`
-   - Env: `VITE_BACKEND_URL=https://<render-service>.onrender.com`
-4. **Post-deploy smoke test**
-   - `/api/health`
-   - `/api/auth/ton-connect/challenge`
-   - TonConnect login and mining flow end-to-end
-   - Partner reward claim
-   - TON payment webhook (or manual `/api/orders/:id/confirm` with a transaction hash)
-
-Detailed instructions with screenshots live in `docs/DEPLOYMENT.md`.
+- Daily sync: короткий апдейт (что сделано, что дальше, блокеры). Ссылка на обновлённые чекбоксы в `audit.md` приветствуется.
+- Release log: храните ссылку на PR, commit hash, результаты smoke теста, метрики после релиза.
+- Посторонние запросы (маркетинг, партнёры, комьюнити) направляйте в product lead, фиксируйте решение в docs.
 
 ---
 
-## 11. Product Experience Snapshot
+## Changelog
 
-Derived from the October 2025 product research:
+- 2025-10-31 — плейбук синхронизирован с новой чеклистовой структурой, добавлены рабочий цикл и актуальные задачи.
 
-- Mining screen loops through ads (video or image) and pays `CL` energy based on creative type (`ENERGY_PER_AD` config). Cooldown is 30 seconds; daily limit is 200 ads.
-- Stats screen shows lifetime energy, total ads watched, active multiplier, session count, daily usage, and latest watch logs (reward plus multiplier).
-- Wallet tab integrates TonConnect. Users buy time-limited boosts (Bronze x1.25, Silver x1.5, etc.). Each order returns an encoded comment payload; TonAPI webhook (or a manual transaction-hash confirmation) validates the payment before the boost activates and is marked `ACTIVE`.
-- Partner rewards allow one-time bonuses defined in `shared/config/partners.ts`. Backend ensures each user can claim a given partner only once.
-- Referral UI shares `https://cladhunter.app/ref/<userId>` and promises +10% bonus capped at 50 CL per month, but backend logic still needs implementation.
-- Withdraw button is visible but inactive; messaging or hidden state is required until redemption mechanics are ready.
-
----
-
-## 12. Known Gaps and Risks
-
-**Architecture**
-- Sessions are wallet-bound but not tied to Telegram identity; bind Telegram `initData` (and optionally additional signals) to prevent multi-account abuse.
-- Boost confirmation depends on TonAPI verification with a transaction hash. Configure and monitor the TonAPI webhook in production so users rarely need manual confirmation.
-- Render and Neon scaling has not been tested for 1k+ concurrent users. Increase connection pools and run load tests.
-- Inline schema migrations are fragile. Introduce a managed migration tool before altering production schema.
-
-**UX and localisation**
-- No onboarding or glossary. Add first-run guidance, explain `CL` energy, and localise key copy to Russian.
-- Error messages surface raw API strings. Replace with friendly, localised messages.
-- Withdraw CTA should either be hidden or carry "coming soon" messaging until implemented.
-
-**Features**
-- Referral programme lacks backend support (tracking, rewards, caps, anti-fraud).
-- Withdrawal and payout mechanics are undefined; clarify before promising external value.
-- Admin console for creatives and economy tuning is missing. Roadmap item remains open.
-
-**Security and fraud prevention**
-- No behavioural safeguards beyond cooldown. Monitor `ads/complete` cadence and introduce checks (e.g., minimum watch duration, captcha) if abuse appears.
-- Payment webhook is not fully wired. Register TonAPI webhook with shared secret and payload mapping.
-
-**Analytics and marketing**
-- No analytics SDK. Instrument activation, retention, boost conversion, and referral metrics.
-- Ad click tracking is absent. Add API logging to demonstrate ROI to partners.
-- Launch marketing assets (landing page, Telegram channel, partner brief) need owners and timelines.
-
----
-
-## 13. Roadmap (execution view)
-
-| Phase | Objective | Key Deliverables |
-|-------|-----------|------------------|
-| MVP Launch (0-1k users) | Ship trustworthy core loop | Telegram initData auth, strict TON payment confirmation, RU/EN onboarding, analytics baseline, beta feedback |
-| Growth (1k-10k users)   | Scale content and monetisation | Render/Neon scaling plan, ad/admin tooling, referral backend with anti-fraud, events or streaks, partner campaign operations |
-| Retention (10k+ users)  | Deepen engagement and trust | Leaderboards and achievements, advanced anti-abuse, withdrawal UX, richer analytics dashboards, community operations |
-
----
-
-## 14. Immediate Work Queue
-
-- [ ] Draft Telegram identity binding (data contract, DB changes, frontend wiring) and create implementation tickets.
-- [ ] Configure TonAPI webhook delivery (deploy secret, set up retries/alerts) so boost settlements happen automatically without manual hashes.
-- [ ] Prepare onboarding flow and localisation checklist; extract copy for RU translation.
-- [ ] Select analytics tooling (GA, Amplitude, PostHog, etc.) and outline instrumentation.
-- [ ] Assemble marketing collateral checklist (landing page, Telegram channel, partner brief) and define referral backend scope.
-
-Keep this handbook updated as features ship or architecture changes. PME (product, marketing, engineering) leads own the roadmap sections.

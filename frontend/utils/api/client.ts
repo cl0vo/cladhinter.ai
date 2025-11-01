@@ -66,17 +66,18 @@ export interface ApiRequestOptions extends RequestInit {
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { accessToken, userId, headers, ...init } = options;
-  const finalHeaders: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...headers,
-  };
+  const finalHeaders = new Headers(headers as HeadersInit | undefined);
+
+  if (!finalHeaders.has('Content-Type')) {
+    finalHeaders.set('Content-Type', 'application/json');
+  }
 
   if (accessToken) {
-    finalHeaders['Authorization'] = `Bearer ${accessToken}`;
+    finalHeaders.set('Authorization', `Bearer ${accessToken}`);
   }
 
   if (userId) {
-    finalHeaders['X-User-ID'] = userId;
+    finalHeaders.set('X-User-ID', userId);
   }
 
   const response = await fetch(`${API_BASE}${path}`, {

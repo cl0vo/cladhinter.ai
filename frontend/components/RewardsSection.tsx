@@ -11,6 +11,7 @@ import type { ClaimRewardResponse, RewardStatusResponse } from '../types';
 import { hapticFeedback } from '../utils/telegram';
 import { GlassCard } from './GlassCard';
 import { formatCl } from '../utils/helpers';
+import { captureEvent } from '../utils/analytics';
 
 interface RewardsSectionProps {
   onRewardClaimed?: () => void;
@@ -80,6 +81,11 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
         setClaimedPartners((previous) => [...previous, partner.id]);
         toast.success(`+${formatCl(response.reward)} CL earned`, {
           description: `Thanks for supporting ${response.partner_name}.`,
+        });
+        captureEvent('reward_claimed', {
+          partner_id: partner.id,
+          partner_name: partner.name,
+          reward: response.reward,
         });
         hapticFeedback('notification', 'success');
         onRewardClaimed?.();

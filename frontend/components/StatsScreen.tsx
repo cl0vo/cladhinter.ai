@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button } from './ui/button';
+import { Button } from './Button';
 import { GlassCard } from './GlassCard';
 import { TonConnectButton } from './TonConnectButton';
 import { Activity, Award, Clock, TrendingUp, Zap } from 'lucide-react';

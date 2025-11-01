@@ -2,6 +2,7 @@ import { useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiRequest } from '../utils/api/client';
+import { captureEvent, identifyUser, resetAnalytics } from '../utils/analytics';
 
 export interface AuthUser {
   id: string;
@@ -125,6 +126,7 @@ export function useAuth() {
   const [error, setError] = useState<string | null>(null);
   const currentChallengeRef = useRef<string | null>(null);
   const abortAuthRef = useRef<AbortController | null>(null);
+  const trackedSessionRef = useRef<string | null>(null);
 
   const walletAddress = useMemo(() => {
     const address = wallet?.account.address;
@@ -144,10 +146,22 @@ export function useAuth() {
       accessToken: session.accessToken,
       walletAddress: session.walletAddress,
     });
+    if (trackedSessionRef.current !== session.userId) {
+      identifyUser(session.userId, { wallet_address: session.walletAddress });
+      captureEvent('session_start', {
+        wallet_address: session.walletAddress,
+      });
+      trackedSessionRef.current = session.userId;
+    }
   }, []);
 
   const clearSession = useCallback(() => {
+    if (trackedSessionRef.current) {
+      captureEvent('session_end', { user_id: trackedSessionRef.current });
+    }
+    trackedSessionRef.current = null;
     setUser(null);
+    resetAnalytics();
   }, []);
 
   const fetchChallenge = useCallback(async () => {
@@ -161,12 +175,7 @@ export function useAuth() {
         tonConnectUI.setConnectRequestParameters({
           state: 'ready',
           value: {
-            items: [
-              {
-                name: 'ton-proof',
-                payload: response.payload,
-              },
-            ],
+            tonProof: response.payload,
           },
         });
       } else {
@@ -241,6 +250,13 @@ export function useAuth() {
         accessToken: existing.accessToken,
         walletAddress: existing.walletAddress,
       });
+      if (trackedSessionRef.current !== existing.userId) {
+        identifyUser(existing.userId, { wallet_address: existing.walletAddress });
+        captureEvent('session_start', {
+          wallet_address: existing.walletAddress,
+        });
+        trackedSessionRef.current = existing.userId;
+      }
       setLoading(false);
       return;
     }

@@ -7,6 +7,6 @@ const defaultStyle: CSSProperties = {
   '--normal-border': 'var(--border)',
 } as CSSProperties;
 
-export const Toaster = (props: ToasterProps) => (
-  <Sonner theme="dark" className="toaster group" style={defaultStyle} {...props} />
-);
+export function Toaster(props: ToasterProps) {
+  return <Sonner theme="dark" className="toaster group" style={defaultStyle} {...props} />;
+}

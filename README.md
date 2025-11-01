@@ -110,6 +110,8 @@ When debugging locally you may omit `VITE_BACKEND_URL` and the client falls back
 ### frontend/.env
 
 - `VITE_BACKEND_URL` - explicit API base (Render URL) if auto detection is not desired.
+- `VITE_POSTHOG_KEY` - PostHog project key used for analytics capture (optional).
+- `VITE_POSTHOG_HOST` - PostHog API host override when using EU/US clusters (optional).
 
 Restart the relevant dev server when environment values change.
 
@@ -138,7 +140,7 @@ Detailed steps live in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - **Identity**: Anonymous sessions create a new account per device. Binding Telegram `initData` (and optionally Ton wallet) is required to merge profiles and prevent multi-account abuse.
 - **Payments**: Boost activation now requires a verified TON transaction hash. Wire the TonAPI webhook in production so boosts settle automatically and users rarely need manual confirmation.
 - **Economy & UX**: Onboarding, localisation (RU/EN), friendly error copy, and inactive Withdraw button adjustments are needed ahead of launch.
-- **Analytics**: No instrumentation yet. Add GA/Amplitude/PostHog (or similar) to track activation, retention, and monetisation metrics.
+- **Analytics**: PostHog SDK instrumented on the frontend (session/ad/boost events). Backend logging and error tracking still pending.
 - **Referrals and withdrawals**: UI promises functionality that the backend does not yet implement. Prioritise referral tracking, caps, and payout design.
 
 See [`docs/PRODUCT_ANALYSIS.md`](docs/PRODUCT_ANALYSIS.md) for a full product audit, phased roadmap, and execution plan.

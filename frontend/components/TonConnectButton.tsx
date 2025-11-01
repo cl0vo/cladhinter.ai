@@ -1,5 +1,5 @@
 import { useTonConnect } from '../hooks/useTonConnect';
-import { Button } from './ui/button';
+import { Button } from './Button';
 import { Wallet, LogOut, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';

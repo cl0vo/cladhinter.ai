@@ -12,6 +12,7 @@ import { apiRequest } from '../utils/api/client';
 import { boostMultiplier } from '@shared/config/economy';
 import { getRandomAd, type AdCreative } from '@shared/config/ads';
 import { formatCl } from '../utils/helpers';
+import { captureEvent } from '../utils/analytics';
 
 interface AdCompleteResponse {
   success: boolean;
@@ -51,16 +52,19 @@ export function MiningScreen() {
     }
 
     if (!isWalletConnected) {
+      captureEvent('ad_start_blocked', { reason: 'wallet_disconnected' });
       toast.error('Please connect your TON wallet to start mining.');
       return;
     }
 
     if (!hasUserData) {
+      captureEvent('ad_start_blocked', { reason: 'profile_sync_pending' });
       toast.error('We are syncing your profile. Please try again in a moment.');
       return;
     }
 
     if (isCooldownActive) {
+      captureEvent('ad_cooldown_blocked', { remaining_seconds: cooldownRemaining });
       toast.error('Please wait for the cooldown to finish before mining again.');
       return;
     }
@@ -68,6 +72,11 @@ export function MiningScreen() {
     // Get a random ad creative
     const adCreative = getRandomAd();
     setCurrentAdCreative(adCreative);
+
+    captureEvent('ad_view_started', {
+      ad_id: adCreative.id,
+      ad_type: adCreative.type,
+    });
 
     // Open ad modal
     setIsAdModalOpen(true);
@@ -108,6 +117,14 @@ export function MiningScreen() {
       const multiplierText = result.multiplier > 1 ? ` (x${result.multiplier})` : '';
       toast.success(`+${result.reward} CL mined successfully${multiplierText}!`);
 
+      captureEvent('ad_view_complete', {
+        ad_id: adId,
+        reward: result.reward,
+        multiplier: result.multiplier,
+        new_balance: result.new_balance,
+        daily_watches_remaining: result.daily_watches_remaining,
+      });
+
       await refreshBalance();
       setCooldownRemaining(30);
 
@@ -121,10 +138,13 @@ export function MiningScreen() {
         error instanceof Error ? error.message : 'Unable to complete the mining session.';
 
       if (/cooldown/i.test(message)) {
+        captureEvent('ad_cooldown_blocked', { source: 'api', ad_id: adId });
         toast.error('Please wait for the cooldown to finish before mining again.');
       } else if (/daily limit/i.test(message)) {
+        captureEvent('ad_daily_limit_reached', { ad_id: adId });
         toast.error('Daily ad limit reached. Try again tomorrow.');
       } else {
+        captureEvent('ad_view_failed', { ad_id: adId, message });
         toast.error('Unable to complete the mining session. Please try again.');
       }
 
