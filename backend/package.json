@@ -8,6 +8,8 @@
     "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json"
   },
   "dependencies": {
+    "@sentry/node": "^7.120.4",
+    "@sentry/tracing": "^7.120.4",
     "@ton/core": "^0.62.0",
     "@ton/crypto": "^3.3.0",
     "@ton/ton": "^16.0.0",

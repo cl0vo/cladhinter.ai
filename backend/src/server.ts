@@ -2,6 +2,8 @@ import cors from 'cors';
 import express from 'express';
 import type { ErrorRequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
+import * as Sentry from '@sentry/node';
+import '@sentry/tracing';
 import { ZodError } from 'zod';
 
 import {
@@ -9,11 +11,31 @@ import {
   getHttpConfig,
   getNodeEnv,
   getRateLimitConfig,
+  getSentryConfig,
 } from './config';
 import { ensureDatabase } from './db';
 import apiRoutes from './routes';
 
 const app = express();
+
+const nodeEnv = getNodeEnv();
+const { dsn: sentryDsn, tracesSampleRate, profilesSampleRate } = getSentryConfig();
+const sentryEnabled = Boolean(sentryDsn);
+
+if (sentryEnabled) {
+  Sentry.init({
+    dsn: sentryDsn ?? undefined,
+    environment: nodeEnv,
+    integrations: [
+      new Sentry.Integrations.Http({ tracing: true }),
+      new Sentry.Integrations.Express({ app }),
+    ],
+    tracesSampleRate,
+    profilesSampleRate,
+  });
+  app.use(Sentry.Handlers.requestHandler());
+  app.use(Sentry.Handlers.tracingHandler());
+}
 
 app.disable('x-powered-by');
 app.use(
@@ -41,6 +63,10 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
+if (sentryEnabled) {
+  app.use(Sentry.Handlers.errorHandler());
+}
+
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof ZodError) {
     res.status(400).json({ error: err.errors.map((issue) => issue.message).join(', ') });
@@ -63,7 +89,7 @@ async function start() {
   await ensureDatabase();
   const { host, port } = getHttpConfig();
   app.listen(port, host, () => {
-    console.info(`[api] Server ready on http://${host}:${port} (${getNodeEnv()})`);
+    console.info(`[api] Server ready on http://${host}:${port} (${nodeEnv})`);
   });
 }
 
