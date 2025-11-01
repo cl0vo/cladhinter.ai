@@ -8,8 +8,6 @@ const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX = 120;
 const DEFAULT_TON_API_BASE_URL = 'https://tonapi.io';
 const DEFAULT_TON_PROOF_TTL_SECONDS = 15 * 60;
-const DEFAULT_SENTRY_TRACES_SAMPLE_RATE = 0;
-const DEFAULT_SENTRY_PROFILES_SAMPLE_RATE = 0;
 const DEFAULT_TON_PROOF_ALLOWED_DOMAINS = [
   'localhost:5173',
   '127.0.0.1:5173',
@@ -86,17 +84,6 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   return parsed > 0 ? parsed : fallback;
 }
 
-function parseSampleRate(value: string | undefined, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-  const parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return parsed >= 0 && parsed <= 1 ? parsed : fallback;
-}
-
 function parseStringList(raw: string | undefined, fallback: string[]): string[] {
   if (!raw) {
     return fallback;
@@ -118,21 +105,4 @@ export function getTonProofConfig(): { allowedDomains: string[]; maxAgeSeconds: 
     DEFAULT_TON_PROOF_TTL_SECONDS,
   );
   return { allowedDomains, maxAgeSeconds };
-}
-
-export function getSentryConfig(): {
-  dsn: string | null;
-  tracesSampleRate: number;
-  profilesSampleRate: number;
-} {
-  const dsn = process.env.SENTRY_DSN?.trim() || null;
-  const tracesSampleRate = parseSampleRate(
-    process.env.SENTRY_TRACES_SAMPLE_RATE,
-    DEFAULT_SENTRY_TRACES_SAMPLE_RATE,
-  );
-  const profilesSampleRate = parseSampleRate(
-    process.env.SENTRY_PROFILES_SAMPLE_RATE,
-    DEFAULT_SENTRY_PROFILES_SAMPLE_RATE,
-  );
-  return { dsn, tracesSampleRate, profilesSampleRate };
 }

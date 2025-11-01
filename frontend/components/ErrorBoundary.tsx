@@ -2,7 +2,6 @@ import React, { Component, ReactNode } from 'react';
 import { GlassCard } from './GlassCard';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from './Button';
-import * as Sentry from '@sentry/react';
 
 interface Props {
   children: ReactNode;
@@ -25,11 +24,6 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
-    Sentry.captureException(error, {
-      extra: {
-        componentStack: errorInfo.componentStack,
-      },
-    });
   }
 
   handleReset = () => {

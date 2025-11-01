@@ -106,17 +106,12 @@ When debugging locally you may omit `VITE_BACKEND_URL` and the client falls back
 - `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` - per-IP throttling guardrails.
 - `TON_API_BASE_URL`, `TON_API_KEY` - TonAPI configuration for payment verification.
 - `TON_WEBHOOK_SECRET` - header token required on webhook requests.
-- `SENTRY_DSN` - optional DSN for backend error/performance telemetry.
-- `SENTRY_TRACES_SAMPLE_RATE` - sampling rate (0.0-1.0) for backend APM spans.
-- `SENTRY_PROFILES_SAMPLE_RATE` - sampling rate (0.0-1.0) for backend profiling data.
 
 ### frontend/.env
 
 - `VITE_BACKEND_URL` - explicit API base (Render URL) if auto detection is not desired.
 - `VITE_POSTHOG_KEY` - PostHog project key used for analytics capture (optional).
 - `VITE_POSTHOG_HOST` - PostHog API host override when using EU/US clusters (optional).
-- `VITE_SENTRY_DSN` - optional Sentry DSN for the React client.
-- `VITE_SENTRY_TRACES_SAMPLE_RATE` - sampling rate (0.0-1.0) for frontend tracing.
 
 Restart the relevant dev server when environment values change.
 

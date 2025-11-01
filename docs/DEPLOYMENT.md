@@ -1,4 +1,4 @@
-﻿# Deployment Playbook (Render + Vercel + Neon)
+# Deployment Playbook (Render + Vercel + Neon)
 
 Пошаговый гайд для выката CladHunter на домен `https://cladhunter.app`. Используйте его вместе с `audit.md` (фазы 1, 6, 7) и `README.md` → «Deployment Basics». Каждый блок снабжён чеклистом — переносите результаты в release log.
 
@@ -44,7 +44,6 @@
 - `MERCHANT_WALLET`
 - `TON_API_BASE_URL`, `TON_API_KEY`
 - `TON_WEBHOOK_SECRET`
-- `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE`, `SENTRY_PROFILES_SAMPLE_RATE`
 - `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` (по необходимости)
 
 ### Чеклист
@@ -68,7 +67,6 @@
 ### Переменные окружения
 
 - `VITE_BACKEND_URL=https://cladhunter-api.onrender.com` (или ваш Render URL)
-- `VITE_SENTRY_DSN`, `VITE_SENTRY_TRACES_SAMPLE_RATE`
 
 ### Чеклист
 
@@ -126,5 +124,4 @@
 ## История изменений
 
 - 2025-10-31 — документ переработан в пошаговый playbook с чеклистами и smoke тестом.
-
 
