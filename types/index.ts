@@ -103,3 +103,23 @@ export interface RewardStatusResponse {
   claimed_partners: string[]; // Array of partner IDs already claimed
   available_rewards: number; // Count of unclaimed rewards
 }
+
+// Daily bonus types
+export interface DailyBonusStatusResponse {
+  claimed_today: boolean;
+  streak: number;
+  claimable: boolean;
+  claimable_reward: number;
+  next_reward: number;
+  next_available_at: string;
+  last_claim_date: string | null;
+}
+
+export interface DailyBonusClaimResponse {
+  success: boolean;
+  reward: number;
+  streak: number;
+  new_balance: number;
+  next_reward: number;
+  next_available_at: string;
+}

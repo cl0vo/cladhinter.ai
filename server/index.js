@@ -36,6 +36,9 @@ const BOOSTS = [
 const AD_COOLDOWN_SECONDS = 30;
 const DAILY_VIEW_LIMIT = 200;
 const BASE_AD_REWARD = 10;
+const DAILY_BONUS_BASE_REWARD = 25;
+const DAILY_BONUS_STREAK_BONUS = 5;
+const DAILY_BONUS_MAX_STREAK = 7;
 
 // Helper: Get user ID from request header
 function getUserId(req) {
@@ -63,6 +66,10 @@ async function getOrCreateUser(userId) {
         user.boost_level = 0;
         user.boost_expires_at = null;
       }
+
+      if (user.daily_bonus_streak == null) {
+        user.daily_bonus_streak = 0;
+      }
       
       return user;
     }
@@ -84,6 +91,46 @@ async function getOrCreateUser(userId) {
 // Helper: Get boost multiplier
 function boostMultiplier(level) {
   return BOOSTS.find(b => b.level === level)?.multiplier || 1;
+}
+
+function calculateDailyBonusReward(streak) {
+  const normalized = Math.max(1, Math.min(streak, DAILY_BONUS_MAX_STREAK));
+  return DAILY_BONUS_BASE_REWARD + (normalized - 1) * DAILY_BONUS_STREAK_BONUS;
+}
+
+function getTodayDateString() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function getDateStringWithOffset(offsetDays) {
+  const now = new Date();
+  const utcDate = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + offsetDays
+  ));
+  return utcDate.toISOString().split('T')[0];
+}
+
+function getNextUtcMidnightISOString() {
+  const now = new Date();
+  const nextMidnight = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1
+  ));
+  return nextMidnight.toISOString();
+}
+
+function parseDateInput(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getDateStringFromValue(value) {
+  const parsed = parseDateInput(value);
+  return parsed ? parsed.toISOString().split('T')[0] : null;
 }
 
 // ===== ROUTES =====
@@ -147,7 +194,111 @@ app.get('/user/balance', async (req, res) => {
   }
 });
 
-// Complete ad watch
+  // Daily bonus status
+  app.get('/bonus/status', async (req, res) => {
+    try {
+      const userId = getUserId(req);
+
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const user = await getOrCreateUser(userId);
+      const today = getTodayDateString();
+      const yesterday = getDateStringWithOffset(-1);
+      const lastClaimDate = getDateStringFromValue(user.last_bonus_claim);
+      const claimedToday = lastClaimDate === today;
+      const currentStreak = user.daily_bonus_streak || 0;
+      const canClaim = !claimedToday;
+
+      const projectedStreak = canClaim
+        ? (lastClaimDate === yesterday ? currentStreak + 1 : 1)
+        : Math.max(currentStreak, 1);
+
+      const cappedProjectedStreak = Math.min(projectedStreak, DAILY_BONUS_MAX_STREAK);
+      const baseStreakForNextReward = canClaim
+        ? cappedProjectedStreak
+        : Math.min(Math.max(currentStreak, 1), DAILY_BONUS_MAX_STREAK);
+
+      const claimableReward = canClaim ? calculateDailyBonusReward(cappedProjectedStreak) : 0;
+      const nextReward = calculateDailyBonusReward(
+        Math.min(baseStreakForNextReward + 1, DAILY_BONUS_MAX_STREAK)
+      );
+
+      res.json({
+        claimed_today: claimedToday,
+        streak: currentStreak,
+        claimable: canClaim,
+        claimable_reward: claimableReward,
+        next_reward: nextReward,
+        next_available_at: canClaim ? new Date().toISOString() : getNextUtcMidnightISOString(),
+        last_claim_date: lastClaimDate,
+      });
+    } catch (error) {
+      console.error('Error fetching bonus status:', error);
+      res.status(500).json({ error: 'Failed to fetch bonus status' });
+    }
+  });
+
+  // Claim daily bonus
+  app.post('/bonus/claim', async (req, res) => {
+    try {
+      const userId = getUserId(req);
+
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const user = await getOrCreateUser(userId);
+      const today = getTodayDateString();
+      const yesterday = getDateStringWithOffset(-1);
+      const lastClaimDate = getDateStringFromValue(user.last_bonus_claim);
+      const claimedToday = lastClaimDate === today;
+
+      if (claimedToday) {
+        return res.status(400).json({ error: 'Daily bonus already claimed today' });
+      }
+
+      const currentStreak = user.daily_bonus_streak || 0;
+      const newStreakRaw = lastClaimDate === yesterday ? currentStreak + 1 : 1;
+      const newStreak = Math.min(newStreakRaw, DAILY_BONUS_MAX_STREAK);
+      const reward = calculateDailyBonusReward(newStreak);
+
+      await sql`
+        UPDATE users
+        SET 
+          energy = energy + ${reward},
+          daily_bonus_streak = ${newStreak},
+          last_bonus_claim = ${today}::date,
+          updated_at = NOW()
+        WHERE id = ${userId}
+      `;
+
+      await sql`
+        INSERT INTO daily_bonus_claims (user_id, reward, streak, claimed_at)
+        VALUES (${userId}, ${reward}, ${newStreak}, NOW())
+      `;
+
+      const updatedUser = await getOrCreateUser(userId);
+      const nextReward = calculateDailyBonusReward(
+        Math.min(updatedUser.daily_bonus_streak + 1, DAILY_BONUS_MAX_STREAK)
+      );
+
+      res.json({
+        success: true,
+        reward,
+        streak: updatedUser.daily_bonus_streak,
+        new_balance: updatedUser.energy,
+        next_reward: nextReward,
+        next_available_at: getNextUtcMidnightISOString(),
+      });
+    } catch (error) {
+      console.error('Error claiming daily bonus:', error);
+      res.status(500).json({ error: 'Failed to claim daily bonus' });
+    }
+  });
+
+  // Complete ad watch
 app.post('/ads/complete', async (req, res) => {
   try {
     const userId = getUserId(req);

@@ -37,6 +37,7 @@ async function migrate() {
     console.log('   - daily_watch_counts');
     console.log('   - orders');
     console.log('   - reward_claims');
+    console.log('   - daily_bonus_claims');
     
   } catch (error) {
     console.error('❌ Migration failed:', error);

@@ -3,11 +3,13 @@ import { GlassCard } from './GlassCard';
 import { Button } from './ui/button';
 import { TonConnectButton } from './TonConnectButton';
 import { Copy, Share2, Zap, TrendingUp, Shield, ArrowDownToLine, ArrowUpFromLine, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
 import { useUserData } from '../hooks/useUserData';
 import { useApi } from '../hooks/useApi';
 import { useTonConnect } from '../hooks/useTonConnect';
+import { useDailyBonus } from '../hooks/useDailyBonus';
+import { DailyBonusCard } from './DailyBonusCard';
 import { BOOSTS, energyToTon } from '../config/economy';
 
 interface OrderResponse {
@@ -38,6 +40,12 @@ export function WalletScreen() {
   const { userData, refreshBalance } = useUserData();
   const { makeRequest } = useApi();
   const { sendTransaction, isConnected } = useTonConnect();
+  const {
+    status: dailyBonusStatus,
+    loading: dailyBonusLoading,
+    claiming: claimingDailyBonus,
+    claimBonus,
+  } = useDailyBonus();
   
   const [pendingOrder, setPendingOrder] = useState<OrderResponse | null>(null);
   const [processingBoost, setProcessingBoost] = useState<number | null>(null);
@@ -55,6 +63,19 @@ export function WalletScreen() {
     const referralLink = `https://cladhunter.app/ref/${user?.id}`;
     navigator.clipboard.writeText(referralLink);
     toast.success('Referral link copied!');
+  };
+
+  const handleClaimDailyBonus = async () => {
+    const result = await claimBonus();
+
+    if (result && result.success) {
+      toast.success(`+${result.reward} ⚡ daily bonus claimed!`, {
+        description: `Streak ${result.streak} day${result.streak === 1 ? '' : 's'}`,
+      });
+      await refreshBalance();
+    } else if (dailyBonusStatus?.claimable) {
+      toast.error('Failed to claim daily bonus. Please try again.');
+    }
   };
 
   const handleBuyBoost = async (boostLevel: number) => {
@@ -186,10 +207,17 @@ export function WalletScreen() {
             COPY
           </Button>
         </div>
-      </GlassCard>
+        </GlassCard>
 
-      {/* Pending Order */}
-      {pendingOrder && (
+        <DailyBonusCard
+          status={dailyBonusStatus}
+          loading={dailyBonusLoading}
+          claiming={claimingDailyBonus}
+          onClaim={handleClaimDailyBonus}
+        />
+
+        {/* Pending Order */}
+        {pendingOrder && (
         <GlassCard className="p-4 mb-5 border-2 border-[#FF0033]">
           <p className="text-[#FF0033] uppercase tracking-wider mb-3">PENDING PAYMENT</p>
           <p className="text-white/80 text-sm mb-2">

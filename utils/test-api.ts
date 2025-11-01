@@ -84,6 +84,44 @@ export class ApiTester {
   }
 
   /**
+   * Test daily bonus status
+   */
+  async testDailyBonusStatus() {
+    console.log('Testing daily bonus status...');
+    try {
+      const response = await fetch(`${this.baseUrl}/bonus/status`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+      const data = await response.json();
+      console.log('Daily bonus status:', data);
+      return data;
+    } catch (error) {
+      console.error('Daily bonus status failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Test claiming daily bonus
+   */
+  async testClaimDailyBonus() {
+    console.log('Testing daily bonus claim...');
+    try {
+      const response = await fetch(`${this.baseUrl}/bonus/claim`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+      });
+      const data = await response.json();
+      console.log('Daily bonus claim:', data);
+      return data;
+    } catch (error) {
+      console.error('Daily bonus claim failed:', error);
+      return null;
+    }
+  }
+
+  /**
    * Test get next ad
    */
   async testGetNextAd() {
@@ -174,6 +212,12 @@ export class ApiTester {
     console.log('\n');
     
     await this.testGetBalance();
+    console.log('\n');
+    
+    await this.testDailyBonusStatus();
+    console.log('\n');
+    
+    await this.testClaimDailyBonus();
     console.log('\n');
     
     const ad = await this.testGetNextAd();

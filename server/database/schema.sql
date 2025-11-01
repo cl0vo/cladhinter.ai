@@ -11,9 +11,17 @@ CREATE TABLE IF NOT EXISTS users (
   boost_level INTEGER NOT NULL DEFAULT 0,
   last_watch_at TIMESTAMP,
   boost_expires_at TIMESTAMP,
+  daily_bonus_streak INTEGER NOT NULL DEFAULT 0,
+  last_bonus_claim DATE,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS users
+  ADD COLUMN IF NOT EXISTS daily_bonus_streak INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE IF EXISTS users
+  ADD COLUMN IF NOT EXISTS last_bonus_claim DATE;
 
 -- Sessions table (for tracking app logins)
 CREATE TABLE IF NOT EXISTS sessions (
@@ -69,6 +77,16 @@ CREATE TABLE IF NOT EXISTS reward_claims (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Daily bonus claims table (for login rewards)
+CREATE TABLE IF NOT EXISTS daily_bonus_claims (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  reward INTEGER NOT NULL,
+  streak INTEGER NOT NULL,
+  claimed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_boost_expires ON users(boost_expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
@@ -78,6 +96,8 @@ CREATE INDEX IF NOT EXISTS idx_daily_watch_counts_date ON daily_watch_counts(dat
 CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_reward_claims_user_id ON reward_claims(user_id);
+CREATE INDEX IF NOT EXISTS idx_daily_bonus_claims_user_id ON daily_bonus_claims(user_id);
+CREATE INDEX IF NOT EXISTS idx_daily_bonus_claims_claimed_at ON daily_bonus_claims(claimed_at);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

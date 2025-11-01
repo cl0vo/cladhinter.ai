@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GlassCard } from './GlassCard';
 import { Gift, ExternalLink, Check } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { getActivePartners, platformConfig, type PartnerReward } from '../config/partners';
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../hooks/useAuth';
@@ -24,11 +24,17 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
 
   // Load claimed rewards status
   useEffect(() => {
+    if (!user) {
+      setClaimedPartners([]);
+      setLoading(false);
+      return;
+    }
     loadRewardStatus();
   }, [user]);
 
   async function loadRewardStatus() {
     if (!user) return;
+    setLoading(true);
     
     try {
       const response = await makeRequest<RewardStatusResponse>(
@@ -38,8 +44,8 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
         user.id
       );
 
-      if (response?.data) {
-        setClaimedPartners(response.data.claimed_partners);
+      if (response) {
+        setClaimedPartners(response.claimed_partners);
       }
     } catch (error) {
       console.error('Failed to load reward status:', error);
@@ -74,12 +80,12 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           user.id
         );
 
-        if (response?.data) {
+        if (response) {
           setClaimedPartners(prev => [...prev, partner.id]);
           toast.success(
-            `🎉 ${response.data.reward} 🆑 earned!`,
+            `🎉 ${response.reward} 🆑 earned!`,
             {
-              description: `Thanks for subscribing to ${response.data.partner_name}!`,
+              description: `Thanks for subscribing to ${response.partner_name}!`,
             }
           );
           hapticFeedback('notification', 'success');
@@ -88,11 +94,6 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
           if (onRewardClaimed) {
             onRewardClaimed();
           }
-        } else if (response?.error) {
-          toast.error('Failed to claim reward', {
-            description: response.error,
-          });
-          hapticFeedback('notification', 'error');
         }
       } catch (error) {
         console.error('Error claiming reward:', error);
@@ -210,3 +211,5 @@ export function RewardsSection({ onRewardClaimed }: RewardsSectionProps) {
     </div>
   );
 }
+
+
