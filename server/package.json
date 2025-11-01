@@ -1,0 +1,32 @@
+{
+  "name": "cladhunter-server",
+  "version": "1.0.0",
+  "description": "Cladhunter API Server with Neon PostgreSQL",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "migrate": "node migrate.js",
+    "test": "node test-connection.js"
+  },
+  "keywords": [
+    "cladhunter",
+    "mining",
+    "api",
+    "neon",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17"
+  }
+}

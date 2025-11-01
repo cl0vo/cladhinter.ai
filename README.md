@@ -1,146 +1,441 @@
-# Cladhunter
+# 🆑 Cladhunter
 
-Watch-to-earn mini app for Telegram. Users mine virtual `CL` energy by viewing partner ads, buy reward boosts with TON, and track their progress across Mining, Stats, and Wallet screens.
+> **Cloud Mining Simulator & Watch-to-Earn Platform**
+> 
+> A mobile-first web app where users earn crypto energy by watching ads and can boost their earnings with TON blockchain payments.
 
----
-
-## Highlights
-
-- Mining loop delivers configurable video and banner ads; each completion rewards `CL` energy based on creative type.
-- Wallet-bound onboarding uses TonConnect ton-proof (`GET /api/auth/ton-connect/challenge` → `POST /api/auth/ton-connect`) to issue `{ userId, accessToken, walletAddress }`.
-- Stats screen aggregates lifetime earnings, daily usage, active multiplier, and the latest watch history so users can track performance.
-- Wallet integrates TonConnect for paid boosts; orders return encoded comment payloads and the server validates TON transfers before applying multipliers.
-- Partner campaigns grant one-off bonuses, while referral sharing and planned withdrawals pave the way for growth and monetisation.
+![Version](https://img.shields.io/badge/version-1.0.0-red)
+![React](https://img.shields.io/badge/React-18+-blue)
+![TypeScript](https://img.shields.io/badge/TypeScript-5+-blue)
+![Neon](https://img.shields.io/badge/Neon-PostgreSQL-green)
+![TON](https://img.shields.io/badge/TON-Blockchain-blue)
 
 ---
 
-## Architecture Overview
+## ✨ Features
 
-| Layer    | Stack / Tools                                   | Hosting |
-|----------|--------------------------------------------------|---------|
-| Frontend | React 18, TypeScript, Vite, Tailwind, TonConnect | Vercel  |
-| Backend  | Node 18, Express, Zod, pg, express-rate-limit    | Render  |
-| Database | PostgreSQL                                       | Neon    |
-| Shared   | TypeScript configs (ads, economy, partners)      | Shared  |
+- 🎯 **Ad-Based Mining**: Watch ads to earn energy (🆑)
+- 🎁 **Partner Rewards**: Earn coins for subscribing to Telegram/X channels
+- 📱 **Telegram Web App**: Native integration with haptic feedback
+- 🎬 **Partner Ads**: Fullscreen video/image ads with 9:16 format
+- ⚡ **Boost System**: Purchase multipliers with TON cryptocurrency
+- 📊 **Statistics Dashboard**: Track your earnings and performance
+- 💰 **Wallet Integration**: Manage balance and transactions
+- 📲 **Mobile-Optimized**: Safe area insets, touch targets, responsive design
+- 🎨 **Dark Futuristic Theme**: Glassmorphic UI with red accents
+- 🔐 **Secure Backend**: Supabase Edge Functions with authentication
+- 🚀 **Production Ready**: Full API, data persistence, and error handling
+- 🔧 **Easy Config**: Simple files for adding partners and ads
 
-Repository layout:
+---
 
+## 🚀 Quick Start
+
+### ⚡ Быстрый старт за 5 минут
+
+```bash
+# 1. Клонируйте репозиторий
+git clone https://github.com/cl0vo/cladhunter.ai.git
+cd cladhunter.ai
+
+# 2. Автоматическая установка всего проекта
+npm run setup
+
+# 3. Настройте Neon Database
+# - Зайдите на neon.tech и создайте проект
+# - Скопируйте Connection String
+# - Добавьте в server/.env: DATABASE_URL=...
+
+# 4. Запустите миграции
+npm run server:migrate
+
+# 5. Запустите всё одной командой!
+npm run start:all
 ```
-.
-|- backend/              # Express API, Ton integration, schema bootstrap
-|- frontend/             # Vite client with Mining / Stats / Wallet screens
-|- shared/config/        # Ads, economy, partner campaign definitions
-\- docs/                 # Deployment and product documentation
-```
 
----
+Откройте [http://localhost:5173](http://localhost:5173) 🎉
 
-## Core Flow
+**📖 Детальное руководство**: 
+- ⚡ [QUICK_START.md](./QUICK_START.md) - Старт за 5 минут
+- 🔧 [NEON_SETUP.md](./NEON_SETUP.md) - Настройка Neon PostgreSQL
+- 🔄 [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) - Миграция с Supabase
 
-1. **Telegram launch**: The mini app opens in full-screen mode via the Telegram WebApp API. The client fetches a ton-proof challenge (`GET /api/auth/ton-connect/challenge`), forwards it to the connected wallet with TonConnect, and exchanges the signed proof via `POST /api/auth/ton-connect` to obtain `{ userId, accessToken, walletAddress }`.
-2. **Mining**: The Mining screen renders creatives from `shared/config/ads.ts`. Rewards per ad are pulled from `ENERGY_PER_AD` (examples: short video +10 CL, long video +25 CL, promo banner +50 CL). After a valid view the client posts `/api/ads/complete { ad_id }`; the backend enforces a 30 second cooldown and a 200 ad daily limit, updates `users.energy`, logs the event, and returns the new balance.
-3. **Stats**: `/api/stats` returns aggregates (total CL earned, watch counts, streak data, boost multiplier) plus the latest watch log entries so users see recent gains.
-4. **Wallet & boosts**: `POST /api/orders/create` sets up TON payments with an encoded comment payload. TonConnect sends the transaction; a TonAPI webhook (or a manual `/api/orders/:id/confirm` call with the transaction hash) finalises the order before the multiplier is applied.
-5. **Partner rewards**: Users claim bonuses with `/api/rewards/claim` using partner IDs from `shared/config/partners.ts`. The API prevents duplicate claims and logs the reward.
-6. **Referrals & withdrawals**: UI surfaces referral links (`https://cladhunter.app/ref/<userId>`) and a disabled Withdraw button. Backend implementation is pending; the roadmap covers referral tracking, anti-fraud, and future redemption mechanics.
+### Альтернатива: Только Frontend
 
----
-
-## API Surface
-
-| Method | Endpoint                            | Description                                        |
-|--------|-------------------------------------|----------------------------------------------------|
-| GET    | `/api/auth/ton-connect/challenge`   | Generate TonConnect ton-proof payload              |
-| POST   | `/api/auth/ton-connect`             | Verify ton-proof and issue wallet-bound session    |
-| GET    | `/api/health`                       | Health probe for uptime checks                     |
-| POST   | `/api/user/init`                    | Initialise counters and session log                |
-| GET    | `/api/user/balance`                 | Current balance, boost state, multiplier           |
-| GET    | `/api/stats`                        | Lifetime stats and recent watch history            |
-| POST   | `/api/ads/complete`                 | Register ad completion (cooldown and limits apply) |
-| GET    | `/api/rewards/status`               | List claimed partner rewards and remaining bonuses |
-| POST   | `/api/rewards/claim`                | Grant partner reward if eligible                   |
-| POST   | `/api/orders/create`                | Create TON boost order                             |
-| POST   | `/api/orders/:id/confirm`           | Manually confirm TON payment with a transaction hash |
-| POST   | `/api/payments/ton/webhook`         | TonAPI webhook for asynchronous settlement         |
-
-Response contracts are shared with the frontend under `frontend/types/`.
-
----
-
-## Build & Run Modes
-
-### Production (Vercel)
-
-The shipped bundle is built for the public Vercel deployment. Before running `npm run build:frontend`, export `VITE_BACKEND_URL` so the client calls the live Render API (for example `https://cladhunter-api.onrender.com`). Deploy `frontend/dist` to Vercel; the app is served from `https://cladhunter.vercel.app` or your configured custom domain.
+Можно запустить фронтенд без бэкенда для просмотра UI:
 
 ```bash
 npm install
-VITE_BACKEND_URL=https://cladhunter-api.onrender.com npm run build:frontend
+npm run dev
 ```
 
-### Local debugging
+_(API запросы будут падать, но UI можно посмотреть)_
 
-> Requires Node.js 18+ and access to a PostgreSQL instance (Neon recommended).
+---
 
+## 📱 Demo
+
+### Mining Screen
+- Click the big red button to start mining
+- Watch 5-second ad simulation
+- Earn energy with boost multipliers
+
+### Statistics Screen
+- View total mined energy
+- See 7-day earnings chart
+- Track mining sessions history
+
+### Wallet Screen
+- Check current balance
+- Purchase premium boosts
+- View transaction history
+- Share referral links
+
+---
+
+## 🏗 Architecture
+
+```
+Frontend (React + TypeScript + Tailwind)
+    ↓
+API Layer (Custom Hooks + Fetch)
+    ↓
+Backend (Node.js + Express)
+    ↓
+Database (Neon PostgreSQL Serverless)
+    ↓
+Blockchain (TON Connect)
+```
+
+**📐 Репозиторий**: [github.com/cl0vo/cladhunter.ai](https://github.com/cl0vo/cladhunter.ai)
+
+---
+
+## 🛠 Tech Stack
+
+### Frontend
+- **React** - UI framework
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **Motion** - Animations
+- **Recharts** - Data visualization
+- **Shadcn/ui** - Component library
+
+### Backend
+- **Node.js** - JavaScript runtime
+- **Express** - Web framework
+- **Neon** - Serverless PostgreSQL
+- **@neondatabase/serverless** - Database driver
+
+### Blockchain
+- **TON** - Payment infrastructure
+- **TON Connect** - Wallet connection ✅
+
+---
+
+## 📊 Economy
+
+| Item | Value |
+|------|-------|
+| 1 TON | 100,000 🆑 |
+| Base Ad Reward | 10-50 🆑 |
+| Daily Limit | 200 ads |
+| Cooldown | 30 seconds |
+
+### Boost Levels
+
+| Level | Name | Multiplier | Price | Duration |
+|-------|------|------------|-------|----------|
+| 0 | Base | 1x | Free | - |
+| 1 | Bronze | 1.25x | 0.3 TON | 7 days |
+| 2 | Silver | 1.5x | 0.7 TON | 14 days |
+| 3 | Gold | 2x | 1.5 TON | 30 days |
+| 4 | Diamond | 3x | 3.5 TON | 60 days |
+
+---
+
+## 🔐 Security
+
+- ✅ **Authentication**: Anonymous user IDs (anon_*)
+- ✅ **Anti-Spam**: 30-second cooldown between ads
+- ✅ **Rate Limiting**: 200 ads per user per day
+- ✅ **Database Transactions**: Prevent race conditions
+- ✅ **Environment Variables**: Sensitive keys protected
+- ✅ **CORS**: Properly configured for production
+- ✅ **PostgreSQL Indexes**: Optimized queries
+
+---
+
+## 📁 Project Structure
+
+```
+/
+├── components/           # React components
+│   ├── MiningScreen.tsx      # Main mining interface
+│   ├── RewardsSection.tsx    # Partner rewards
+│   ├── StatsScreen.tsx       # Statistics & charts
+│   ├── WalletScreen.tsx      # Wallet & boosts
+│   └── ui/                   # Reusable UI components
+├── hooks/                # Custom React hooks
+│   ├── useAuth.tsx           # Authentication
+│   ├── useUserData.tsx       # User state
+│   └── useApi.tsx            # API requests
+├── config/               # App configuration
+│   ├── economy.ts            # Economy settings
+│   ├── partners.ts           # Partner rewards config
+│   └── ads.ts                # Ad creatives config
+├── server/               # Backend API ⭐ NEW
+│   ├── index.js              # Express server
+│   ├── migrate.js            # Database migrations
+│   ├── package.json          # Server dependencies
+│   └── database/
+│       └── schema.sql        # PostgreSQL schema
+├── utils/                # Utility functions
+│   ├── helpers.ts            # Helper functions
+│   ├── telegram.ts           # Telegram Web App utils
+│   └── supabase/
+│       └── client.tsx        # API client (Neon adapted)
+├── types/                # TypeScript types
+├── App.tsx               # Main app component
+└── styles/               # Global styles
+```
+
+---
+
+## 🧪 Testing
+
+### Manual Testing
 ```bash
-npm install                                # install workspace dependencies
-cp backend/.env.example backend/.env       # configure DATABASE_URL, TON keys, etc.
-cp frontend/.env.example frontend/.env     # optional VITE_BACKEND_URL override
-
-npm run dev:backend                        # start Express API on http://localhost:4000
-npm run dev:frontend                       # start Vite dev server on http://localhost:5173
+# Open browser console and run:
+await window.testApi.runAllTests()
 ```
 
-When debugging locally you may omit `VITE_BACKEND_URL` and the client falls back to `http://localhost:4000/api`. Production builds must set `VITE_BACKEND_URL` to the Render URL.
+### API Testing
+```bash
+# Test individual endpoints:
+await window.testApi.testHealth()
+await window.testApi.testUserInit()
+await window.testApi.testCompleteAd('ad_1')
+```
+
+### Simulation
+```bash
+# Simulate 5 mining sessions with cooldown:
+await window.testApi.simulateMining(5)
+```
 
 ---
 
-## Key Environment Variables
+## 🚀 Deployment
 
-### backend/.env
+### Frontend
+Deploy to any static hosting:
+- **Vercel**: `vercel deploy`
+- **Netlify**: Drag & drop build folder
+- **GitHub Pages**: Push to gh-pages branch
+- **Cloudflare Pages**: Connect GitHub repo
 
-- `DATABASE_URL` - Neon connection string (`sslmode=require`).
-- `HOST` / `PORT` - binding options (Render overrides port in production).
-- `CORS_ALLOWED_ORIGINS` - comma separated allow list for the API.
-- `MERCHANT_WALLET` - TON wallet that receives boost payments.
-- `API_RATE_LIMIT_WINDOW_MS`, `API_RATE_LIMIT_MAX` - per-IP throttling guardrails.
-- `TON_API_BASE_URL`, `TON_API_KEY` - TonAPI configuration for payment verification.
-- `TON_WEBHOOK_SECRET` - header token required on webhook requests.
+### Backend
+Deploy Express server to:
+- **Railway**: `railway up` (рекомендуется)
+- **Render**: Connect GitHub repo
+- **Vercel**: Serverless functions
+- **Fly.io**: `fly launch`
 
-### frontend/.env
-
-- `VITE_BACKEND_URL` - explicit API base (Render URL) if auto detection is not desired.
-- `VITE_POSTHOG_KEY` - PostHog project key used for analytics capture (optional).
-- `VITE_POSTHOG_HOST` - PostHog API host override when using EU/US clusters (optional).
-
-Restart the relevant dev server when environment values change.
+**Детальное руководство**: [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md#-деплой)
 
 ---
 
-## Deployment Basics
+## 📝 Configuration
 
-1. **Database**: Provision Neon, copy the pooled `DATABASE_URL`, and ensure `sslmode=require`.
-2. **Backend (Render)**:
-   - Build command: `npm install && npm run build:backend`
-   - Start command: `npm run start:backend`
-   - Set environment variables listed above
-   - Health check path: `/api/health`
-3. **Frontend (Vercel)**:
-   - Build command: `npm run build:frontend`
-   - Output directory: `frontend/dist`
-   - Environment: `VITE_BACKEND_URL=https://<render-service>.onrender.com`
-4. **Smoke test**: hit `/api/health` and `/api/auth/ton-connect/challenge`, walk through Mining (ad complete, stats update), claim a partner reward, send a TON payment for a boost, and ensure the webhook (or manual `/api/orders/:id/confirm` with a transaction hash) activates the boost.
+### Economy Settings
+Edit `/config/economy.ts`:
 
-Detailed steps live in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+```typescript
+export const TON_TO_ENERGY_RATE = 100000;
+export const DAILY_VIEW_LIMIT = 200;
+export const AD_COOLDOWN_SECONDS = 30;
+```
+
+### Partner Rewards ⭐ NEW
+Edit `/config/partners.ts` to add partner channels:
+
+```typescript
+{
+  id: 'telegram_your_channel',
+  platform: 'telegram',        // telegram | x | youtube | instagram | discord
+  name: 'Your Channel',
+  url: 'https://t.me/channel',
+  reward: 750,                 // Coins (500-1000 recommended)
+  active: true,
+}
+```
+
+**Full Guide**: [REWARDS_GUIDE.md](./REWARDS_GUIDE.md)
+
+### Partner Ads
+Edit `/config/ads.ts` to add video/image ads:
+
+```typescript
+{
+  id: 'your_ad',
+  type: 'video',              // or 'image'
+  url: 'https://cdn.com/ad.mp4',
+  partnerUrl: 'https://partner.com',
+  partnerName: 'Partner',
+}
+```
+
+### Boost Levels
+```typescript
+export const BOOSTS = [
+  { level: 1, name: "Bronze", multiplier: 1.25, costTon: 0.3, durationDays: 7 },
+  // Add more...
+];
+```
+
+### Theme Colors
+Edit `/styles/globals.css` to change brand colors.
 
 ---
 
-## Current Risks and Gaps
+## 📚 Documentation
 
-- **Identity**: Anonymous sessions create a new account per device. Binding Telegram `initData` (and optionally Ton wallet) is required to merge profiles and prevent multi-account abuse.
-- **Payments**: Boost activation now requires a verified TON transaction hash. Wire the TonAPI webhook in production so boosts settle automatically and users rarely need manual confirmation.
-- **Economy & UX**: Onboarding, localisation (RU/EN), friendly error copy, and inactive Withdraw button adjustments are needed ahead of launch.
-- **Analytics**: PostHog SDK instrumented on the frontend (session/ad/boost events). Backend logging and error tracking still pending.
-- **Referrals and withdrawals**: UI promises functionality that the backend does not yet implement. Prioritise referral tracking, caps, and payout design.
+### 🚀 Getting Started
+- **Neon Setup**: [NEON_SETUP.md](./NEON_SETUP.md) - Настройка Neon PostgreSQL
+- **Migration Guide**: [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) - Миграция с Supabase
+- **Agent Guide**: [agent.md](./agent.md) - Полный контекст для разработки
 
-See [`docs/PRODUCT_ANALYSIS.md`](docs/PRODUCT_ANALYSIS.md) for a full product audit, phased roadmap, and execution plan.
+### 🔧 Configuration
+- **Economy**: [config/economy.ts](./config/economy.ts) - Настройки экономики
+- **Partners**: [config/partners.ts](./config/partners.ts) - Партнерские награды
+- **Ads**: [config/ads.ts](./config/ads.ts) - Рекламные креативы
+
+### 📡 API Reference
+- **Server Code**: [server/index.js](./server/index.js) - Express endpoints
+- **Database Schema**: [server/database/schema.sql](./server/database/schema.sql) - PostgreSQL tables
+
+---
+
+## 🗺 Roadmap
+
+### Phase 1: MVP ✅
+- [x] Core mining mechanics
+- [x] User authentication
+- [x] Energy system
+- [x] Basic UI/UX
+- [x] Supabase integration
+
+### Phase 2: Boosts 🚧
+- [x] Boost purchase system
+- [x] Demo payment flow
+- [ ] Real TON payment integration
+- [ ] Webhook verification
+
+### Phase 3: Features 📋
+- [ ] Real ad network integration (AdMob/Unity Ads)
+- [ ] Referral tracking
+- [ ] Daily bonuses
+- [ ] Achievements system
+- [ ] Leaderboards
+
+### Phase 4: Scale 🔮
+- [x] Migrate to PostgreSQL (Neon) ✅
+- [ ] Add caching layer (Redis)
+- [ ] Analytics dashboard
+- [ ] Admin panel
+- [ ] Social features
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+**Guidelines**:
+- Follow existing code style
+- Add TypeScript types
+- Test on mobile viewport
+- Update documentation
+
+---
+
+## ⚠️ Known Limitations
+
+### Current Demo Mode
+- **Simulated Ads**: Uses 5-second timer instead of real ads
+- **Manual Payment Confirmation**: TON payments not auto-verified
+- **Anonymous Users**: No email/social login yet
+- **No Withdrawals**: Withdrawal feature is UI-only
+
+### Production Todos
+- Integrate real ad network (AdMob, Unity Ads, etc.)
+- Implement TON payment webhook verification
+- Add email/social authentication
+- Build withdrawal system with Lightning or TON
+- Set up admin dashboard for ad management
+- Add rate limiting via Supabase
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+
+---
+
+## 💬 Support
+
+- **GitHub**: [github.com/cl0vo/cladhunter.ai](https://github.com/cl0vo/cladhunter.ai)
+- **Issues**: Open an issue on GitHub
+- **Discussions**: Use GitHub Discussions
+- **Server Logs**: Check console output of `npm run dev`
+- **Database**: Neon Console → SQL Editor
+- **Frontend**: Browser DevTools (F12)
+
+---
+
+## 🌟 Acknowledgments
+
+- Database powered by [Neon](https://neon.tech)
+- UI components from [Shadcn/ui](https://ui.shadcn.com)
+- Icons from [Lucide React](https://lucide.dev)
+- Charts by [Recharts](https://recharts.org)
+- Animations by [Motion](https://motion.dev)
+- TON integration via [TON Connect](https://docs.ton.org/develop/dapps/ton-connect)
+
+---
+
+## 🎯 Project Goals
+
+Cladhunter aims to:
+- Democratize crypto mining through ad-based earning
+- Provide a fun, gamified experience
+- Integrate TON blockchain for real value
+- Create a sustainable watch-to-earn economy
+- Offer a blueprint for similar projects
+
+---
+
+**Made with ❤️ for the TON ecosystem**
+
+*Star ⭐ this repo if you find it useful!*
+
+---
+
+## 📸 Screenshots
+
+*Add your screenshots here after deployment*
+
+---
+
+**Version**: 2.0.0  
+**Last Updated**: November 1, 2025  
+**Status**: Production Ready (Neon PostgreSQL)  
+**Repository**: https://github.com/cl0vo/cladhunter.ai

@@ -1,59 +1,61 @@
-# Cladhunter Working Guidelines (October 2025)
+**Add your own guidelines here**
+<!--
 
-Правила помогают держать команду синхронизированной и не терять ключевую логику при разработке.
+System Guidelines
 
----
+Use this file to provide the AI with rules and guidelines you want it to follow.
+This template outlines a few examples of things you can add. You can add your own sections and format it to suit your needs
 
-## 1. Синхронизация и отчётность
+TIP: More context isn't always better. It can confuse the LLM. Try and add the most important rules you need
 
-- В начале недели обновляйте `audit.md` (Фаза 0) и фиксируйте блокеры.
-- Ежедневно: короткий апдейт в чат (сделано / в работе / блокеры) + ссылка на обновлённые чекбоксы, если меняли.
-- Любые изменения продукта/архитектуры отражайте в `README.md`, `docs/DEPLOYMENT.md`, `docs/PRODUCT_ANALYSIS.md` не позднее дня релиза.
-- После релиза — запись в release log: дата, версия, что проверено, метрики через 24 часа.
+# General guidelines
 
----
+Any general rules you want the AI to follow.
+For example:
 
-## 2. Код и архитектура
+* Only use absolute positioning when necessary. Opt for responsive and well structured layouts that use flexbox and grid by default
+* Refactor code as you go to keep code clean
+* Keep file sizes small and put helper functions and components in their own files.
 
-- Прежде чем менять API, синхронизируйтесь с фронтом и обновите таблицу `API Surface` в `README.md`.
-- Конфигурация экономики (`shared/config`) изменяется одновременно на фронте и бэке.
-- Публичные фичи описывайте в документации: что делает, как проверить, как откатить.
-- Новые зависимости согласуем, добавляем в чеклист `audit.md` (Фаза 0).
+--------------
 
----
+# Design system guidelines
+Rules for how the AI should make generations look like your company's design system
 
-## 3. Проверки качества
+Additionally, if you select a design system to use in the prompt box, you can reference
+your design system's components, tokens, variables and components.
+For example:
 
-- Перед PR: `npm run lint` / `npm run typecheck` / релевантные тесты.
-- Перед деплоем: smoke тест из `docs/DEPLOYMENT.md` (фиксируем результат).
-- Все ошибки фиксируются с описанием причины и шагов воспроизведения в трекере.
+* Use a base font-size of 14px
+* Date formats should always be in the format “Jun 10”
+* The bottom toolbar should only ever have a maximum of 4 items
+* Never use the floating action button with the bottom toolbar
+* Chips should always come in sets of 3 or more
+* Don't use a dropdown if there are 2 or fewer options
 
----
+You can also create sub sections and add more specific details
+For example:
 
-## 4. Работа с TonConnect и TON API
 
-- Тестовые кошельки и ключи храним в защищённом workspace, ссылки — в release log.
-- Любые изменения `tonProof` протокола документируем и доводим до команды.
-- Webhook секреты не попадают в репозиторий; используйте Render secrets.
+## Button
+The Button component is a fundamental interactive element in our design system, designed to trigger actions or navigate
+users through the application. It provides visual feedback and clear affordances to enhance user experience.
 
----
+### Usage
+Buttons should be used for important actions that users need to take, such as form submissions, confirming choices,
+or initiating processes. They communicate interactivity and should have clear, action-oriented labels.
 
-## 5. UX и контент
-
-- Все текстовые строки выносим в ресурсы (готовим RU/EN).
-- Прежде чем включить новую кнопку или баннер, уточните, что backend поддерживает флоу.
-- Promo/маркетинг ассеты (лендинг, видео) должны быть актуальными к дате релиза.
-
----
-
-## 6. Продуктовые решения
-
-- Крупные изменения (экономика, новые экраны) проходят через product review → резюме добавляем в `docs/PRODUCT_ANALYSIS.md`.
-- Roadmap обновляется после ревью, ссылки на решения вставляем в таблицу roadmap.
-
----
-
-## История изменений
-
-- 2025-10-31 — файл заполнен рабочими правилами и синхронизирован с новым чеклистом разработки.
-
+### Variants
+* Primary Button
+  * Purpose : Used for the main action in a section or page
+  * Visual Style : Bold, filled with the primary brand color
+  * Usage : One primary button per section to guide users toward the most important action
+* Secondary Button
+  * Purpose : Used for alternative or supporting actions
+  * Visual Style : Outlined with the primary color, transparent background
+  * Usage : Can appear alongside a primary button for less important actions
+* Tertiary Button
+  * Purpose : Used for the least important actions
+  * Visual Style : Text-only with no border, using primary color
+  * Usage : For actions that should be available but not emphasized
+-->
